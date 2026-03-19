@@ -2,11 +2,11 @@ import hmac
 import hashlib
 import os
 import json
-import requests
 import google.generativeai as genai
 from fastapi import FastAPI, Request, HTTPException, Header
 from typing import Optional, Dict, Any
 from dotenv import load_dotenv
+from github import Github, Auth
 
 load_dotenv()
 
@@ -15,7 +15,7 @@ app = FastAPI()
 # Configuration
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN") # Optional: For private repos
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 
 # Initialize Gemini
 if GEMINI_API_KEY:
@@ -23,6 +23,13 @@ if GEMINI_API_KEY:
     model = genai.GenerativeModel('gemini-1.5-flash')
 else:
     print("Warning: GEMINI_API_KEY not found in environment variables.")
+
+# Initialize PyGithub
+if GITHUB_TOKEN:
+    auth = Auth.Token(GITHUB_TOKEN)
+    g = Github(auth=auth)
+else:
+    g = None
 
 async def verify_signature(request: Request, signature: str):
     """
@@ -49,19 +56,40 @@ async def verify_signature(request: Request, signature: str):
     if not hmac.compare_digest(expected_signature, signature_hash):
         raise HTTPException(status_code=401, detail="Invalid signature")
 
-def download_diff(diff_url: str) -> str:
+def download_diff(repo_full_name: str, pr_number: int) -> str:
     """
-    Downloads the raw diff content from the provided URL.
+    Downloads the raw diff content using PyGithub.
     """
-    headers = {}
-    if GITHUB_TOKEN:
-        headers["Authorization"] = f"token {GITHUB_TOKEN}"
-    
-    response = requests.get(diff_url, headers=headers)
-    if response.status_code == 200:
-        return response.text
-    else:
-        print(f"Failed to download diff: {response.status_code} - {response.text}")
+    if not g:
+        print("Error: GITHUB_TOKEN is required for PyGithub.")
+        return ""
+
+    try:
+        repo = g.get_repo(repo_full_name)
+        pr = repo.get_pull(pr_number)
+        
+        # PyGithub doesn't have a direct 'get_diff' method, 
+        # but we can get the diff by requesting with the correct header via the underlying requests session
+        # or by using the compare endpoint. For simplicity with PyGithub:
+        
+        comparison = repo.compare(pr.base.sha, pr.head.sha)
+        # We want the patch format which is essentially the diff
+        # repo.compare returns a Comparison object. 
+        # Alternatively, we can use the PR's diff_url with the token.
+        
+        import requests
+        url = pr.diff_url
+        headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+        response = requests.get(url, headers=headers)
+        
+        if response.status_code == 200:
+            return response.text
+        else:
+            print(f"Failed to fetch diff via URL: {response.status_code}")
+            return ""
+
+    except Exception as e:
+        print(f"Error fetching diff with PyGithub: {str(e)}")
         return ""
 
 def get_gemini_review(diff_content: str) -> str:
@@ -104,7 +132,7 @@ def get_gemini_review(diff_content: str) -> str:
 @app.post("/webhook")
 async def webhook_handler(request: Request, x_hub_signature_256: Optional[str] = Header(None)):
     """
-    Handles incoming webhook requests from GitHub, downloads diffs, and gets Gemini reviews.
+    Handles incoming webhook requests from GitHub, downloads diffs via PyGithub, and gets Gemini reviews.
     """
     # 1. Verify the HMAC signature
     await verify_signature(request, x_hub_signature_256)
@@ -119,15 +147,15 @@ async def webhook_handler(request: Request, x_hub_signature_256: Optional[str] =
     action = payload.get("action")
     pull_request = payload.get("pull_request")
     
-    if pull_request and action in ["opened", "synchronize"]:
-        diff_url = pull_request.get("diff_url")
-        issue_url = pull_request.get("issue_url") or payload.get("issue", {}).get("url")
+    if pull_request and action in ["opened", "synchronize", "reopened"]:
+        repo_full_name = payload.get("repository", {}).get("full_name")
+        pr_number = pull_request.get("number")
 
-        print(f"Processing PR: {pull_request.get('html_url')}")
+        print(f"Processing PR #{pr_number} in {repo_full_name}")
         
-        if diff_url:
-            print(f"Downloading diff from: {diff_url}")
-            diff_content = download_diff(diff_url)
+        if repo_full_name and pr_number:
+            print(f"Fetching diff using PyGithub for PR #{pr_number}...")
+            diff_content = download_diff(repo_full_name, pr_number)
             
             if diff_content:
                 print("Getting Gemini review...")
