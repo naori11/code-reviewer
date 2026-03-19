@@ -2,7 +2,7 @@ import hmac
 import hashlib
 import os
 import json
-import google.generativeai as genai
+from google import genai
 from fastapi import FastAPI, Request, HTTPException, Header
 from typing import Optional, Dict, Any
 from dotenv import load_dotenv
@@ -17,10 +17,10 @@ WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 
-# Initialize Gemini
+# Initialize Gemini Client
+client = None
 if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel('gemini-2.5-flash')
+    client = genai.Client(api_key=GEMINI_API_KEY)
 else:
     print("Warning: GEMINI_API_KEY not found in environment variables.")
 
@@ -66,10 +66,8 @@ def download_diff(repo_full_name: str, pr_number: int) -> str:
 
     try:
         import requests
-        # Using the official API endpoint for the PR
         url = f"https://api.github.com/repos/{repo_full_name}/pulls/{pr_number}"
 
-        # The 'application/vnd.github.v3.diff' header tells GitHub to return the raw diff
         headers = {
             "Authorization": f"token {GITHUB_TOKEN}",
             "Accept": "application/vnd.github.v3.diff"
@@ -81,7 +79,6 @@ def download_diff(repo_full_name: str, pr_number: int) -> str:
             return response.text
         else:
             print(f"Failed to fetch diff via API: {response.status_code}")
-            # Log the error message from GitHub if available
             try:
                 print(f"Error details: {response.json()}")
             except:
@@ -97,35 +94,44 @@ def get_gemini_review(diff_content: str) -> str:
     """
     Sends the diff content to Gemini for review with a custom prompt.
     """
-    if not GEMINI_API_KEY:
-        return "Gemini API key not configured."
+    if not client:
+        return "Gemini API client not configured."
 
     # --- CUSTOM PROMPT FOR INSTRUCTIONS ---
-    prompt_instructions = """Review this code as a senior developer:
+    prompt_instructions = """
+    
+        Role: Senior Staff Software Engineer & Security Auditor.
+        Objective: Perform a brutal, production-readiness code review. 
 
-        [Paste your code or diff]
+        Context: This review will be posted directly to a Pull Request. Do not include introductory pleasantries, "General Observations" sections, or conversational filler. Start immediately with the findings.
 
-        Check for:
-        1. Bugs: Logic errors, off-by-one, null handling, race conditions
-        2. Security: Injection risks, auth issues, data exposure
-        3. Performance: N+1 queries, unnecessary loops, memory leaks
-        4. Maintainability: Naming, complexity, duplication
-        5. Edge cases: What inputs would break this?
+        Review Criteria:
+        1. Bugs: Logic errors, off-by-one, null handling, race conditions, async/sync blocking.
+        2. Security: Injection, auth bypass, data exposure, insecure defaults.
+        3. Performance: N+1 queries, blocking I/O, memory leaks, token/payload limits.
+        4. Maintainability: Monolithic design, magic strings, lack of logging (vs print), poor separation of concerns.
+        5. Edge Cases: Large payloads, missing env vars, API rate limits.
 
-        For each issue:
-        - Severity: Critical / High / Medium / Low
-        - Line number or section
-        - What's wrong
-        - How to fix it
+        Constraint: For every issue found, you MUST follow this strict format:
 
-        Be harsh. I'd rather fix issues now than in production.
+        - **Severity:** [Critical/High/Medium/Low]
+        - **Location:** [Line number or Function name]
+        - **Issue:** [Concise description of the failure]
+        - **Solution:** [Exact code fix or architectural change required]
+
+        Tone: Harsh, pedantic, and uncompromising. If the code is not production-ready, say so. Do not sugarcoat. Do not provide any information that is not directly relevant to the review findings. Be as concise as possible while still providing actionable feedback.
+        
         """
     # ---------------------------------------
 
     full_prompt = f"{prompt_instructions}\n\nCode Diff:\n{diff_content}"
     
     try:
-        response = model.generate_content(full_prompt)
+        # Using the new google-genai SDK format
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=full_prompt
+        )
         return response.text
     except Exception as e:
         return f"Error calling Gemini API: {str(e)}"
@@ -133,18 +139,15 @@ def get_gemini_review(diff_content: str) -> str:
 @app.post("/webhook")
 async def webhook_handler(request: Request, x_hub_signature_256: Optional[str] = Header(None)):
     """
-    Handles incoming webhook requests from GitHub, downloads diffs via PyGithub, and gets Gemini reviews.
+    Handles incoming webhook requests from GitHub, downloads diffs, and gets Gemini reviews.
     """
-    # 1. Verify the HMAC signature
     await verify_signature(request, x_hub_signature_256)
 
-    # 2. Parse the JSON payload
     try:
         payload = await request.json()
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
-    # 3. Process Pull Request events
     action = payload.get("action")
     pull_request = payload.get("pull_request")
     
@@ -155,7 +158,7 @@ async def webhook_handler(request: Request, x_hub_signature_256: Optional[str] =
         print(f"Processing PR #{pr_number} in {repo_full_name}")
         
         if repo_full_name and pr_number:
-            print(f"Fetching diff using PyGithub for PR #{pr_number}...")
+            print(f"Fetching diff for PR #{pr_number}...")
             diff_content = download_diff(repo_full_name, pr_number)
             
             if diff_content:
