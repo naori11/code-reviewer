@@ -1,0 +1,49 @@
+# Generated .gitignore file for: Python, Pip, VSCode, Docker, GitHub Actions
+# Created with FOSSA's DevOps Tools
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+venv/
+env/
+.env
+*.so
+
+# Pip
+# Add Pip-specific ignores here
+
+# VSCode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# Docker
+docker-compose.override.yml
+Dockerfile.override
+.dockerignore
+
+# GitHub Actions
+# Add GitHub Actions-specific ignores here
+
+# Common
+.DS_Store
+Thumbs.db
+*.log
+*.bak
+*.tmp
+*.swp
+*~
+
+# IDE and editor generated files
+.idea/
+*.sublime-*
+
+# Local environment files
+.env
+.env.local
+.env.*.local
