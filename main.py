@@ -98,22 +98,29 @@ def get_gemini_review(diff_content: str) -> str:
         return "Gemini API client not configured."
 
     # --- CUSTOM PROMPT FOR INSTRUCTIONS ---
-    prompt_instructions = """Review this code as a senior developer:
+    prompt_instructions = """
+    
+        Role: Senior Staff Software Engineer & Security Auditor.
+        Objective: Perform a brutal, production-readiness code review. 
 
-        Check for:
-        1. Bugs: Logic errors, off-by-one, null handling, race conditions
-        2. Security: Injection risks, auth issues, data exposure
-        3. Performance: N+1 queries, unnecessary loops, memory leaks
-        4. Maintainability: Naming, complexity, duplication
-        5. Edge cases: What inputs would break this?
+        Context: This review will be posted directly to a Pull Request. Do not include introductory pleasantries, "General Observations" sections, or conversational filler. Start immediately with the findings.
 
-        For each issue:
-        - Severity: Critical / High / Medium / Low
-        - Line number or section
-        - What's wrong
-        - How to fix it
+        Review Criteria:
+        1. Bugs: Logic errors, off-by-one, null handling, race conditions, async/sync blocking.
+        2. Security: Injection, auth bypass, data exposure, insecure defaults.
+        3. Performance: N+1 queries, blocking I/O, memory leaks, token/payload limits.
+        4. Maintainability: Monolithic design, magic strings, lack of logging (vs print), poor separation of concerns.
+        5. Edge Cases: Large payloads, missing env vars, API rate limits.
 
-        Be harsh. I'd rather fix issues now than in production.
+        Constraint: For every issue found, you MUST follow this strict format:
+
+        - **Severity:** [Critical/High/Medium/Low]
+        - **Location:** [Line number or Function name]
+        - **Issue:** [Concise description of the failure]
+        - **Solution:** [Exact code fix or architectural change required]
+
+        Tone: Harsh, pedantic, and uncompromising. If the code is not production-ready, say so. Do not sugarcoat. Do not provide any information that is not directly relevant to the review findings. Be as concise as possible while still providing actionable feedback.
+        
         """
     # ---------------------------------------
 
