@@ -58,39 +58,40 @@ async def verify_signature(request: Request, signature: str):
 
 def download_diff(repo_full_name: str, pr_number: int) -> str:
     """
-    Downloads the raw diff content using PyGithub.
+    Downloads the raw diff content using the GitHub API with a specialized Accept header.
     """
-    if not g:
-        print("Error: GITHUB_TOKEN is required for PyGithub.")
+    if not GITHUB_TOKEN:
+        print("Error: GITHUB_TOKEN is required.")
         return ""
 
     try:
-        repo = g.get_repo(repo_full_name)
-        pr = repo.get_pull(pr_number)
-        
-        # PyGithub doesn't have a direct 'get_diff' method, 
-        # but we can get the diff by requesting with the correct header via the underlying requests session
-        # or by using the compare endpoint. For simplicity with PyGithub:
-        
-        comparison = repo.compare(pr.base.sha, pr.head.sha)
-        # We want the patch format which is essentially the diff
-        # repo.compare returns a Comparison object. 
-        # Alternatively, we can use the PR's diff_url with the token.
-        
         import requests
-        url = pr.diff_url
-        headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+        # Using the official API endpoint for the PR
+        url = f"https://api.github.com/repos/{repo_full_name}/pulls/{pr_number}"
+
+        # The 'application/vnd.github.v3.diff' header tells GitHub to return the raw diff
+        headers = {
+            "Authorization": f"token {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github.v3.diff"
+        }
+
         response = requests.get(url, headers=headers)
-        
+
         if response.status_code == 200:
             return response.text
         else:
-            print(f"Failed to fetch diff via URL: {response.status_code}")
+            print(f"Failed to fetch diff via API: {response.status_code}")
+            # Log the error message from GitHub if available
+            try:
+                print(f"Error details: {response.json()}")
+            except:
+                pass
             return ""
 
     except Exception as e:
-        print(f"Error fetching diff with PyGithub: {str(e)}")
+        print(f"Error fetching diff: {str(e)}")
         return ""
+
 
 def get_gemini_review(diff_content: str) -> str:
     """
