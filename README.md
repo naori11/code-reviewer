@@ -6,7 +6,7 @@ An automated, AI-powered code review assistant built with **FastAPI** and **Goog
 
 ## 🚀 Core Features
 
-- **Automated AI Analysis:** Leverages **Gemini 2.5 Flash** to perform rigorous code reviews focusing on:
+- **Automated AI Analysis:** Leverages **Gemini AI Models** to perform rigorous code reviews focusing on:
   - **Bugs:** Logic errors, null handling, and race conditions.
   - **Security:** Injection risks, auth bypass, and data exposure.
   - **Performance:** N+1 queries, memory leaks, and blocking I/O.
@@ -40,9 +40,10 @@ An automated, AI-powered code review assistant built with **FastAPI** and **Goog
 ```text
 code-reviewer/
 ├── main.py              # Application entry point, FastAPI routes, and core logic
+├── reviewer.py          # Command-line interface (CLI) for management
+├── pyproject.toml       # CLI installation metadata
 ├── requirements.txt     # Project dependencies
 ├── .env.example         # Template for environment variables
-├── .gitignore           # Standard Python/Node git ignore rules
 └── venv/                # Python virtual environment (ignored by git)
 ```
 
@@ -54,10 +55,7 @@ Before running the application, ensure you have the following:
 
 - **Python 3.10+**
 - **Google Gemini API Key:** Obtain from [Google AI Studio](https://aistudio.google.com/).
-- **GitHub Configuration:** (Choose one)
-  - **GitHub App (Recommended):** `App ID` and `Private Key`.
-  - **Personal Access Token (PAT):** For legacy/quick setup.
-- **Webhook Secret:** A unique string for securing GitHub Webhooks.
+- **GitHub Configuration:** Use either a **GitHub App** (Recommended) or a **Personal Access Token (PAT)**.
 
 ---
 
@@ -69,34 +67,22 @@ git clone https://github.com/your-username/code-reviewer.git
 cd code-reviewer
 ```
 
-### 2. Set Up Virtual Environment
+### 2. Set Up Virtual Environment & CLI
 ```bash
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
+pip install -e .          # Install the 'reviewer' command locally
 ```
 
-### 3. Configure Environment Variables
-Create a `.env` file in the root directory:
+### 3. Configure Environment via CLI
+Run the interactive onboarding wizard to generate your secrets and configure your API keys:
 ```bash
-cp .env.example .env
+reviewer setup-server
 ```
-
-Edit the `.env` file with your credentials:
-```env
-# Required for Webhook Security
-WEBHOOK_SECRET=your_github_webhook_secret
-
-# AI Configuration
-GEMINI_API_KEY=your_gemini_api_key
-
-# GitHub Auth (Option A: App - Recommended)
-GITHUB_APP_ID=your_app_id
-GITHUB_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"
-
-# GitHub Auth (Option B: PAT - Fallback)
-# GITHUB_TOKEN=your_personal_access_token
-```
+- This will automatically generate a secure `WEBHOOK_SECRET`.
+- It will prompt you for your `GEMINI_API_KEY` and GitHub credentials.
+- It will provide a summary of the details needed for your GitHub Webhook settings.
 
 ### 4. Run the Application
 ```bash
@@ -105,9 +91,30 @@ uvicorn main.py:app --host 0.0.0.0 --port 8000 --reload
 
 ---
 
-## 📖 Usage
+## ⌨️ CLI Usage
 
-### GitHub Webhook Configuration
+Once the server is running, you can manage it using the `reviewer` command.
+
+### Initialization
+Connect your CLI to your server (do this once):
+```bash
+reviewer init
+# Follow prompts for Server URL (e.g., http://localhost:8000) and Admin Token
+```
+
+### Management Commands
+| Command | Description |
+| :--- | :--- |
+| `reviewer list` | List all available Gemini models. |
+| `reviewer set <id>` | Switch the active model (e.g., `reviewer set models/gemini-2.0-flash`). |
+| `reviewer status` | Show the currently active model. |
+| `reviewer health` | Verify that Gemini and GitHub API keys are functional. |
+| `reviewer test-webhook` | Simulate a GitHub 'ping' to test server security/HMAC. |
+| `reviewer env` | Show a masked summary of configured environment variables. |
+
+---
+
+## 📖 GitHub Configuration
 1. Go to your GitHub Repository/App settings -> **Webhooks**.
 2. Set **Payload URL** to `http://your-server-ip:8000/webhook`.
 3. Set **Content type** to `application/json`.
@@ -124,7 +131,7 @@ The app automatically triggers a review when a Pull Request is:
 
 ## 📡 API Documentation
 
-### Primary Endpoint
+### Webhook Endpoint
 
 | Method | Endpoint    | Description                                      |
 | :----- | :---------- | :----------------------------------------------- |
@@ -141,6 +148,22 @@ The app automatically triggers a review when a Pull Request is:
   "repository": {
     "full_name": "owner/repo"
   }
+}
+```
+
+### Administrative Endpoints
+*Note: All administrative endpoints require the `X-Admin-Token` header for authentication.*
+
+| Method | Endpoint             | Description                                           |
+| :----- | :------------------- | :---------------------------------------------------- |
+| `GET`  | `/api/models`        | Retrieves a list of available Gemini models and specs. |
+| `GET`  | `/api/models/active` | Returns the name of the currently active model.       |
+| `POST` | `/api/models/active` | Updates the model used for future code reviews.       |
+
+**POST /api/models/active Payload:**
+```json
+{
+  "model_name": "models/gemini-2.0-flash"
 }
 ```
 
