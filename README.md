@@ -47,19 +47,44 @@ code-reviewer/
 └── venv/                # Python virtual environment (ignored by git)
 ```
 
+## 🐳 Docker and Docker Compose Setup
+
+The application is fully containerized and recommended to be run using **Docker Compose** for consistent environment management and simplified updates.
+
+### 1. Configure Environment
+Before starting, ensure you have a `.env` file. You can create it manually or use the CLI:
+```bash
+# Option A: Manual
+cp .env.example .env
+# Edit .env with your keys
+
+# Option B: CLI (Recommended)
+reviewer setup-server
+```
+
+### 2. Launch with Docker Compose
+```bash
+docker-compose up -d
+```
+This will:
+- Build the FastAPI server image.
+- Start the container on port `8000`.
+- Mount your `.env` file into the container.
+- Set the container to automatically restart unless stopped.
+
+### 3. Managing Configuration & Restarts
+When you update your `.env` file (either manually or via `reviewer setup-server`), the changes will **not** take effect until the container is restarted.
+
+- **Manual Restart:**
+  ```bash
+  docker-compose restart
+  ```
+- **CLI-Driven Restart:**
+  The `reviewer setup-server` command will automatically offer to restart the server for you after configuration changes. You can also enable **automatic restarts** during `reviewer init`.
+
 ---
 
-## 📋 Prerequisites
-
-Before running the application, ensure you have the following:
-
-- **Python 3.10+**
-- **Google Gemini API Key:** Obtain from [Google AI Studio](https://aistudio.google.com/).
-- **GitHub Configuration:** Use either a **GitHub App** (Recommended) or a **Personal Access Token (PAT)**.
-
----
-
-## ⚙️ Installation & Setup
+## ⚙️ Installation & Setup (Local Development)
 
 ### 1. Clone the Repository
 ```bash
