@@ -108,6 +108,9 @@ reviewer init
 | `reviewer list` | List all available Gemini models. |
 | `reviewer set <id>` | Switch the active model (e.g., `reviewer set models/gemini-2.0-flash`). |
 | `reviewer status` | Show the currently active model. |
+| `reviewer health` | Verify that Gemini and GitHub API keys are functional. |
+| `reviewer test-webhook` | Simulate a GitHub 'ping' to test server security/HMAC. |
+| `reviewer env` | Show a masked summary of configured environment variables. |
 
 ---
 

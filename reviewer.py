@@ -280,17 +280,31 @@ def set(model_id):
 
 @cli.command()
 def status():
-    """Show the currently active Gemini model."""
+    """Check server connection and show active model."""
     config = load_client_config()
+    url = config['url']
     headers = {"X-Admin-Token": config["token"]}
     
+    click.echo(f"Checking connection to {url}...")
     try:
-        response = httpx.get(f"{config['url']}/api/models/active", headers=headers)
-        response.raise_for_status()
-        data = response.json()
-        click.echo(f"Active Model: {data.get('active_model')}")
+        response = httpx.get(f"{url}/api/models/active", headers=headers, timeout=5.0)
+        if response.status_code == 200:
+            data = response.json()
+            click.secho(f"✔ Server Status: Online", fg="green")
+            click.echo(f"Active Model  : {data.get('active_model')}")
+        elif response.status_code == 403:
+            click.secho(f"✘ Server Status: Unauthorized", fg="red")
+            click.echo("Reason: The Admin Token configured in this CLI does not match the server's WEBHOOK_SECRET.")
+            click.echo("Fix   : Run 'reviewer init' to update your token.")
+        else:
+            click.secho(f"✘ Server Status: Error {response.status_code}", fg="red")
+            click.echo(f"Response: {response.text}")
+    except (httpx.ConnectError, httpx.ConnectTimeout):
+        click.secho(f"✘ Server Status: Unreachable", fg="red")
+        click.echo(f"Reason: Could not connect to {url}. Ensure the FastAPI server is running and the URL is correct.")
     except Exception as e:
-        click.secho(f"Error: {str(e)}", fg="red")
+        click.secho(f"✘ Server Status: Offline/Error", fg="red")
+        click.echo(f"Error detail: {str(e)}")
 
 if __name__ == "__main__":
     cli()
