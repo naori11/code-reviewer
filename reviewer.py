@@ -30,6 +30,7 @@ def load_client_config():
 @click.group(help="""
 Code Reviewer CLI - Manage your Gemini models and server setup.
 
+\b
 Getting Started:
   1. Run 'setup-server' on your VM to configure the environment.
   2. Run 'init' to connect this CLI to your server.

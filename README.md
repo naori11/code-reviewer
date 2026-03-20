@@ -6,7 +6,7 @@ An automated, AI-powered code review assistant built with **FastAPI** and **Goog
 
 ## 🚀 Core Features
 
-- **Automated AI Analysis:** Leverages **Gemini 2.5 Flash** to perform rigorous code reviews focusing on:
+- **Automated AI Analysis:** Leverages **Gemini AI Models** to perform rigorous code reviews focusing on:
   - **Bugs:** Logic errors, null handling, and race conditions.
   - **Security:** Injection risks, auth bypass, and data exposure.
   - **Performance:** N+1 queries, memory leaks, and blocking I/O.
