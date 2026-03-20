@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Use official Python image (slim for smaller size)
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
