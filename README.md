@@ -47,19 +47,44 @@ code-reviewer/
 └── venv/                # Python virtual environment (ignored by git)
 ```
 
+## 🐳 Docker and Docker Compose Setup
+
+The application is fully containerized and recommended to be run using **Docker Compose** for consistent environment management and simplified updates.
+
+### 1. Configure Environment
+Before starting, ensure you have a `.env` file. You can create it manually or use the CLI:
+```bash
+# Option A: Manual
+cp .env.example .env
+# Edit .env with your keys
+
+# Option B: CLI (Recommended)
+reviewer setup-server
+```
+
+### 2. Launch with Docker Compose
+```bash
+docker-compose up -d
+```
+This will:
+- Build the FastAPI server image.
+- Start the container on port `8000`.
+- Mount your `.env` file into the container.
+- Set the container to automatically restart unless stopped.
+
+### 3. Managing Configuration & Restarts
+When you update your `.env` file (either manually or via `reviewer setup-server`), the changes will **not** take effect until the container is restarted.
+
+- **Manual Restart:**
+  ```bash
+  docker-compose restart
+  ```
+- **CLI-Driven Restart:**
+  The `reviewer setup-server` command will automatically offer to restart the server for you after configuration changes. You can also enable **automatic restarts** during `reviewer init`.
+
 ---
 
-## 📋 Prerequisites
-
-Before running the application, ensure you have the following:
-
-- **Python 3.10+**
-- **Google Gemini API Key:** Obtain from [Google AI Studio](https://aistudio.google.com/).
-- **GitHub Configuration:** Use either a **GitHub App** (Recommended) or a **Personal Access Token (PAT)**.
-
----
-
-## ⚙️ Installation & Setup
+## ⚙️ Installation & Setup (Local Development)
 
 ### 1. Clone the Repository
 ```bash
@@ -114,18 +139,53 @@ reviewer init
 
 ---
 
-## 📖 GitHub Configuration
-1. Go to your GitHub Repository/App settings -> **Webhooks**.
-2. Set **Payload URL** to `http://your-server-ip:8000/webhook`.
-3. Set **Content type** to `application/json`.
-4. Enter your `WEBHOOK_SECRET` in the **Secret** field.
-5. Select **Individual events**: `Pull requests`.
+## 📦 Local Development: Exposing Dockerized Webhooks With Ngrok
+
+When running the server in Docker locally, you can use [ngrok](https://ngrok.com/) to provide a public HTTPS endpoint for GitHub webhooks:
+
+### 1. Start Your Docker Container
+```bash
+docker-compose up -d
+```
+Make sure your container maps port 8000 (default FastAPI port) to your host machine.
+
+### 2. Start Ngrok in a Separate Terminal
+You do **not** need to run this from your project directory—any terminal where ngrok is installed will work.
+```bash
+ngrok http 8000
+```
+Ngrok will give you a forwarding HTTPS URL, e.g., `https://abcd1234.ngrok.io`.
+
+### 3. Configure GitHub Webhook
+Go to your GitHub Repository/App settings -> **Webhooks**:
+1. Set **Payload URL** to `https://abcd1234.ngrok.io/webhook` (replace with your generated ngrok URL)
+2. Set **Content type** to `application/json`
+3. Enter your `WEBHOOK_SECRET` in the **Secret** field
+4. Select **Individual events**: `Pull requests`
+
+> **Tip:** Keep ngrok running in the terminal while testing—a new URL is generated every run unless you have a reserved domain (see ngrok Pro docs).
+
 
 ### Application Logic
 The app automatically triggers a review when a Pull Request is:
 - **Opened**
 - **Synchronized** (new commits pushed)
 - **Reopened**
+
+---
+
+## 📖 GitHub Configuration: Deployed in a Virtual Machine
+
+If your server is deployed on a cloud VM or an accessible remote server, you do **not** need ngrok. Use your VM’s external IP or DNS name with the default port (8000):
+
+1. Go to your GitHub Repository/App settings → **Webhooks**
+2. Set **Payload URL** to `http://your-server-ip:8000/webhook` (replace with your VM’s external address)
+3. Set **Content type** to `application/json`
+4. Enter your `WEBHOOK_SECRET` in the **Secret** field
+5. Select **Individual events**: `Pull requests`
+
+> Ensure your VM’s firewall and any cloud provider security groups allow inbound traffic to port 8000.
+
 
 ---
 

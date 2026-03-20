@@ -5,6 +5,7 @@ import os
 import secrets
 import hmac
 import hashlib
+import subprocess
 from pathlib import Path
 from typing import Optional
 from dotenv import load_dotenv, set_key
@@ -15,17 +16,47 @@ from github import Github, Auth
 CONFIG_DIR = Path.home() / ".code_reviewer"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
-def save_client_config(url: str, token: str):
+def save_client_config(url: str, token: str, auto_restart: bool = False):
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     with open(CONFIG_FILE, "w") as f:
-        json.dump({"url": url.rstrip("/"), "token": token}, f)
+        json.dump({
+            "url": url.rstrip("/"),
+            "token": token,
+            "auto_restart_on_config_change": auto_restart
+        }, f)
 
 def load_client_config():
     if not CONFIG_FILE.exists():
         click.secho("Error: Client not initialized. Run 'reviewer init' first.", fg="red")
         exit(1)
     with open(CONFIG_FILE, "r") as f:
-        return json.load(f)
+        config = json.load(f)
+        # Ensure default value if key is missing from old config
+        if "auto_restart_on_config_change" not in config:
+            config["auto_restart_on_config_change"] = False
+        return config
+
+def restart_server():
+    """Executes docker-compose restart to apply changes."""
+    click.echo("🔄 Restarting server container via docker-compose...")
+    try:
+        # Check if docker-compose.yml exists in current directory
+        if not Path("docker-compose.yml").exists():
+            click.secho("Error: docker-compose.yml not found in the current directory.", fg="red")
+            click.echo("Please manually run 'docker-compose restart' in the server directory.")
+            return
+
+        result = subprocess.run(["docker-compose", "restart"], capture_output=True, text=True)
+        if result.returncode == 0:
+            click.secho("✔ Server restarted successfully!", fg="green")
+        else:
+            click.secho(f"✘ Failed to restart server: {result.stderr}", fg="red")
+            click.echo("Please ensure Docker is running and you have permissions.")
+    except FileNotFoundError:
+        click.secho("Error: 'docker-compose' command not found.", fg="red")
+        click.echo("Please install Docker Compose or restart the server manually.")
+    except Exception as e:
+        click.secho(f"Error during restart: {str(e)}", fg="red")
 
 @click.group(help="""
 Code Reviewer CLI - Manage your Gemini models and server setup.
@@ -42,7 +73,8 @@ def cli():
 @cli.command()
 @click.option("--url", help="The URL of your FastAPI server (e.g., http://localhost:8000).")
 @click.option("--token", help="Your server's Admin Token (WEBHOOK_SECRET).")
-def init(url, token):
+@click.option("--auto-restart", is_flag=True, help="Enable automatic server restart on config changes.")
+def init(url, token, auto_restart):
     """Connect the CLI to your Code Reviewer server."""
     # Auto-detection of local .env
     env_path = Path(".env")
@@ -54,6 +86,27 @@ def init(url, token):
     if not url:
         url = click.prompt("Server URL", default="http://localhost:8000")
     
+    url = url.rstrip("/")
+    
+    # Verify server connectivity (similar to status command)
+    click.echo(f"Verifying connection to {url}...")
+    try:
+        # Use a simple health check or the active model endpoint
+        # We don't have the token yet if it's not provided, so we might get a 403 or 401, 
+        # but as long as we get a response, the URL is likely correct.
+        response = httpx.get(f"{url}/api/models/active", timeout=5.0)
+        if response.status_code in [200, 403]:
+            click.secho(f"✔ Server reached successfully.", fg="green")
+        else:
+            click.secho(f"⚠ Server returned unexpected status {response.status_code}. It might be misconfigured.", fg="yellow")
+    except (httpx.ConnectError, httpx.ConnectTimeout):
+        click.secho(f"✘ Error: Could not connect to {url}.", fg="red")
+        click.secho("The server may not be running or the address typed is wrong.", fg="red")
+        if not click.confirm("Do you want to proceed anyway?", default=False):
+            return
+    except Exception as e:
+        click.secho(f"⚠ Warning: Could not verify server connection: {str(e)}", fg="yellow")
+
     if not token:
         if auto_token:
             if click.confirm(f"Found WEBHOOK_SECRET in local .env. Use it?", default=True):
@@ -62,11 +115,15 @@ def init(url, token):
         if not token:
             token = click.prompt("Admin Token (WEBHOOK_SECRET)", hide_input=True)
 
-    save_client_config(url, token)
+    if not auto_restart:
+        auto_restart = click.confirm("Enable automatic server restart on config changes?", default=False)
+
+    save_client_config(url, token, auto_restart)
     click.secho(f"✔ Successfully initialized! Config saved to {CONFIG_FILE}", fg="green")
 
 @cli.command()
-def setup_server():
+@click.option("--restart", is_flag=True, help="Force a server restart after setup.")
+def setup_server(restart):
     """Interactive wizard to configure the server's .env file."""
     click.secho("\n🚀 Code Reviewer Server Onboarding", fg="cyan", bold=True)
     
@@ -82,12 +139,15 @@ def setup_server():
 
     load_dotenv()
     
+    config_changed = False
+
     # 1. WEBHOOK_SECRET
     current_secret = os.getenv("WEBHOOK_SECRET")
     if not current_secret:
         new_secret = secrets.token_hex(20)
         set_key(".env", "WEBHOOK_SECRET", new_secret)
         click.secho(f"✔ Generated new WEBHOOK_SECRET: {new_secret}", fg="green")
+        config_changed = True
     else:
         click.echo("✔ WEBHOOK_SECRET is already configured.")
 
@@ -98,10 +158,12 @@ def setup_server():
         if click.confirm("Do you want to update it?", default=False):
             gemini_key = click.prompt("Enter new GEMINI_API_KEY")
             set_key(".env", "GEMINI_API_KEY", gemini_key)
+            config_changed = True
     else:
         click.echo("Get your key from: https://aistudio.google.com/")
         gemini_key = click.prompt("Enter your GEMINI_API_KEY")
         set_key(".env", "GEMINI_API_KEY", gemini_key)
+        config_changed = True
 
     # 3. GitHub Auth
     click.echo("\n--- GitHub Authentication ---")
@@ -127,16 +189,33 @@ def setup_server():
         private_key = click.prompt("Enter GITHUB_PRIVATE_KEY", default=os.getenv("GITHUB_PRIVATE_KEY", ""))
         set_key(".env", "GITHUB_PRIVATE_KEY", private_key)
         set_key(".env", "GITHUB_TOKEN", "") # Clear PAT
+        config_changed = True
     elif auth_choice == 'pat':
         pat_token = click.prompt("Enter GITHUB_TOKEN", default=os.getenv("GITHUB_TOKEN", ""))
         set_key(".env", "GITHUB_TOKEN", pat_token)
         set_key(".env", "GITHUB_APP_ID", "") # Clear App
         set_key(".env", "GITHUB_PRIVATE_KEY", "")
+        config_changed = True
 
     # Final Summary & Guide
     load_dotenv()
     secret = os.getenv("WEBHOOK_SECRET")
     click.secho("\n✨ Server Configuration Complete!", fg="green", bold=True)
+
+    # Handle Restart
+    if config_changed or restart:
+        # Load config to check for auto-restart
+        try:
+            cli_config = load_client_config()
+            auto_restart = cli_config.get("auto_restart_on_config_change", False)
+        except Exception:
+            auto_restart = False
+
+        if restart or auto_restart or click.confirm("Configuration updated. Restart the server container to apply changes?", default=True):
+            restart_server()
+        else:
+            click.secho("\nNote: Please manually run `docker-compose restart` for changes to take effect.", fg="yellow")
+
     click.echo("\nHow to set up your GitHub Webhook:")
     click.echo("  1. Go to your Repository/App Settings > Webhooks > Add Webhook.")
     click.echo(f"  2. Payload URL: http://[your-server-ip]:8000/webhook")
