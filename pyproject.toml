@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "code-reviewer-cli"
+version = "1.0.0"
+description = "Professional CLI for managing Gemini-powered code reviews"
+dependencies = [
+    "click",
+    "httpx",
+    "python-dotenv",
+]
+
+[tool.setuptools]
+py-modules = ["reviewer"]
+
+[project.scripts]
+reviewer = "reviewer:cli"
