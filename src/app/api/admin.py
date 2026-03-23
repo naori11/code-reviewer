@@ -4,7 +4,8 @@ from sqlmodel import Session, desc, select
 from ..core.config import Settings, get_settings
 from ..core.database import get_session
 from ..core.security import verify_admin_token
-from ..models.entities import AppConfig, ReviewHistory, utc_now
+from ..crud.app_config import get_app_config_singleton, set_active_model_singleton
+from ..models.entities import ReviewHistory
 from ..models.schemas import (
     ActiveModelRequest,
     ActiveModelResponse,
@@ -40,7 +41,7 @@ async def get_active_model(
     session: Session = Depends(get_session),
     settings: Settings = Depends(get_settings),
 ):
-    app_config = session.get(AppConfig, 1)
+    app_config = get_app_config_singleton(session)
     active_model = app_config.active_model if app_config else settings.ai_model_name
     return ActiveModelResponse(active_model=active_model)
 
@@ -57,15 +58,7 @@ async def set_active_model(
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Invalid or inaccessible model: {payload.model_name}") from exc
 
-    app_config = session.get(AppConfig, 1)
-    if app_config:
-        app_config.active_model = payload.model_name
-        app_config.updated_at = utc_now()
-    else:
-        app_config = AppConfig(id=1, active_model=payload.model_name)
-        session.add(app_config)
-
-    session.commit()
+    set_active_model_singleton(session, payload.model_name)
     return ActiveModelUpdateResponse(status="success", active_model=payload.model_name)
 
 

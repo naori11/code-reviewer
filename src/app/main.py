@@ -8,7 +8,7 @@ from .api.admin import router as admin_router
 from .api.webhooks import router as webhooks_router
 from .core.config import get_settings
 from .core.database import engine, init_db
-from .models.entities import AppConfig
+from .crud.app_config import ensure_app_config_singleton
 
 LOGGING_CONFIG = {
     "version": 1,
@@ -48,10 +48,7 @@ async def lifespan(_: FastAPI):
     init_db()
 
     with Session(engine) as session:
-        app_config = session.get(AppConfig, 1)
-        if not app_config:
-            session.add(AppConfig(id=1, active_model=settings.ai_model_name))
-            session.commit()
+        ensure_app_config_singleton(session, settings.ai_model_name)
 
     yield
 

@@ -12,6 +12,10 @@ from ..core.config import Settings
 logger = logging.getLogger(__name__)
 
 
+class GithubServiceError(Exception):
+    pass
+
+
 class GithubService:
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -48,12 +52,12 @@ class GithubService:
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_exception_type(httpx.HTTPError),
+        retry=retry_if_exception_type(GithubServiceError),
     )
     def download_diff(self, github_token: str, repo_full_name: str, pr_number: int) -> str:
         if not github_token:
             logger.error("github_token is required for download_diff.")
-            return ""
+            raise GithubServiceError("github_token is required for download_diff")
 
         url = f"https://api.github.com/repos/{repo_full_name}/pulls/{pr_number}"
         headers = {
@@ -61,21 +65,32 @@ class GithubService:
             "Accept": "application/vnd.github.v3.diff",
         }
 
-        with httpx.Client(timeout=30.0) as client:
-            response = client.get(url, headers=headers)
-
-        if response.status_code == 200:
-            return response.text
-
-        if response.status_code in {429, 500, 502, 503, 504}:
-            response.raise_for_status()
-
-        logger.warning("Failed to fetch diff via API: %s", response.status_code)
         try:
-            logger.error("GitHub API error details: %s", response.json())
-        except (json.JSONDecodeError, httpx.DecodingError):
-            logger.error("GitHub API error details (raw text): %s", response.text)
-        return ""
+            with httpx.Client(timeout=30.0) as client:
+                response = client.get(url, headers=headers)
+
+            if response.status_code == 200:
+                return response.text
+
+            error_message = (
+                f"Failed to fetch diff from GitHub API for {repo_full_name} PR #{pr_number}. "
+                f"Status: {response.status_code}. "
+            )
+            try:
+                error_details = response.json()
+                error_message += f"Details: {error_details}"
+            except (json.JSONDecodeError, httpx.DecodingError):
+                error_message += f"Raw response: {response.text}"
+
+            logger.error(error_message)
+            raise GithubServiceError(error_message)
+        except httpx.HTTPError as exc:
+            raise GithubServiceError(f"HTTP error during diff download: {exc}") from exc
+        except GithubServiceError:
+            raise
+        except Exception as exc:
+            logger.exception("Unexpected error during diff download: %s", exc)
+            raise GithubServiceError(f"Unexpected error during diff download: {exc}") from exc
 
     @retry(
         stop=stop_after_attempt(3),

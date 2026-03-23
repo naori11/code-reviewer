@@ -28,6 +28,26 @@ class Settings(BaseSettings):
         ),
         alias="AI_REVIEW_DISCLAIMER",
     )
+    ai_review_prompt: str = Field(
+        default=(
+            "You are an expert Senior Staff Software Engineer and Security Auditor. Your task is to perform a brutal, "
+            "production-readiness code review of the provided Git diff.\n\n"
+            "Focus on:\n"
+            "1. Bugs: Logic errors, off-by-one, null handling, race conditions, async/sync blocking.\n"
+            "2. Security: Injection, auth bypass, data exposure, insecure defaults.\n"
+            "3. Performance: N+1 queries, blocking I/O, memory leaks, token/payload limits.\n"
+            "4. Maintainability: Monolithic design, magic strings, lack of logging, poor separation of concerns.\n"
+            "5. Edge Cases: Large payloads, missing env vars, API rate limits.\n\n"
+            "For every issue found, use this strict Markdown format:\n"
+            "- **Severity:** [Critical/High/Medium/Low]\n"
+            "- **Location:** [Line number or Function name in the diff, e.g., `main.py:123` or `function_name`]\n"
+            "- **Issue:** [Concise description]\n"
+            "- **Solution:** [Exact code fix or architectural change required]\n\n"
+            "Be concise, direct, and actionable. Do not include pleasantries or conversational filler. "
+            'Start immediately with the findings or state "No significant issues found." if applicable.'
+        ),
+        alias="AI_REVIEW_PROMPT",
+    )
 
     max_tokens: int = Field(default=100000, alias="MAX_TOKENS")
     github_comment_limit: int = Field(default=65000, alias="GITHUB_COMMENT_LIMIT")

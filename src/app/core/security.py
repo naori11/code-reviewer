@@ -1,10 +1,13 @@
 import hashlib
 import hmac
+import logging
 from typing import Optional
 
 from fastapi import Depends, Header, HTTPException
 
 from .config import Settings, get_settings
+
+logger = logging.getLogger(__name__)
 
 
 def verify_webhook_signature(signature: Optional[str], raw_payload: bytes, settings: Settings) -> None:
@@ -30,11 +33,12 @@ async def verify_admin_token(
     x_admin_token: Optional[str] = Header(default=None, alias="X-Admin-Token"),
     settings: Settings = Depends(get_settings),
 ) -> str:
-    valid_tokens = [settings.webhook_secret]
-    if settings.admin_api_key:
-        valid_tokens.append(settings.admin_api_key)
+    if not settings.admin_api_key:
+        logger.critical("ADMIN_API_KEY is not configured. Admin API access is disabled.")
+        raise HTTPException(status_code=503, detail="Admin API is not configured.")
 
-    if not x_admin_token or x_admin_token not in valid_tokens:
+    if not x_admin_token or x_admin_token != settings.admin_api_key:
+        logger.warning("Unauthorized admin API access attempt.")
         raise HTTPException(status_code=403, detail="Unauthorized admin access")
 
     return x_admin_token
