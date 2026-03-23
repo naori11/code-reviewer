@@ -94,7 +94,7 @@ def init(url, token, auto_restart):
         # Use a simple health check or the active model endpoint
         # We don't have the token yet if it's not provided, so we might get a 403 or 401, 
         # but as long as we get a response, the URL is likely correct.
-        response = httpx.get(f"{url}/api/models/active", timeout=5.0)
+        response = httpx.get(f"{url}/api/admin/config/active-model", timeout=5.0)
         if response.status_code in [200, 403]:
             click.secho(f"✔ Server reached successfully.", fg="green")
         else:
@@ -329,7 +329,7 @@ def list():
     headers = {"X-Admin-Token": config["token"]}
     
     try:
-        response = httpx.get(f"{config['url']}/api/models", headers=headers, timeout=10.0)
+        response = httpx.get(f"{config['url']}/api/admin/models", headers=headers, timeout=10.0)
         response.raise_for_status()
         data = response.json()
         
@@ -352,7 +352,7 @@ def set(model_id):
     payload = {"model_name": model_id}
     
     try:
-        response = httpx.post(f"{config['url']}/api/models/active", headers=headers, json=payload)
+        response = httpx.post(f"{config['url']}/api/admin/config/active-model", headers=headers, json=payload)
         response.raise_for_status()
         click.secho(f"✔ Successfully switched to {model_id}", fg="green")
     except Exception as e:
@@ -367,7 +367,7 @@ def status():
     
     click.echo(f"Checking connection to {url}...")
     try:
-        response = httpx.get(f"{url}/api/models/active", headers=headers, timeout=5.0)
+        response = httpx.get(f"{url}/api/admin/config/active-model", headers=headers, timeout=5.0)
         if response.status_code == 200:
             data = response.json()
             click.secho(f"✔ Server Status: Online", fg="green")
