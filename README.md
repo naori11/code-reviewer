@@ -39,12 +39,29 @@ An automated, AI-powered code review assistant built with **FastAPI** and **Goog
 
 ```text
 code-reviewer/
-├── main.py              # Application entry point, FastAPI routes, and core logic
-├── reviewer.py          # Command-line interface (CLI) for management
-├── pyproject.toml       # CLI installation metadata
-├── requirements.txt     # Project dependencies
-├── .env.example         # Template for environment variables
-└── venv/                # Python virtual environment (ignored by git)
+├── main.py                  # Thin entrypoint that exposes src.app.main:app
+├── reviewer.py              # Command-line interface (CLI) for management
+├── src/
+│   └── app/
+│       ├── main.py          # FastAPI app wiring and startup lifespan
+│       ├── api/
+│       │   ├── webhooks.py  # GitHub webhook endpoint and review orchestration
+│       │   └── admin.py     # Admin API endpoints (/api/admin/*)
+│       ├── core/
+│       │   ├── config.py    # Environment-backed settings
+│       │   ├── security.py  # Webhook signature and admin token verification
+│       │   └── database.py  # SQLModel engine/session wiring
+│       ├── services/
+│       │   ├── github_service.py  # GitHub auth, diff fetch, PR comments
+│       │   └── gemini_service.py  # Token counting and AI review generation
+│       ├── crud/
+│       │   └── app_config.py      # Singleton AppConfig CRUD helpers
+│       └── models/
+│           ├── entities.py  # Database entities
+│           └── schemas.py   # API request/response schemas
+├── pyproject.toml           # CLI installation metadata
+├── requirements.txt         # Project dependencies
+└── .env.example             # Template for environment variables
 ```
 
 ## 🐳 Docker and Docker Compose Setup
@@ -107,11 +124,12 @@ reviewer setup-server
 ```
 - This will automatically generate a secure `WEBHOOK_SECRET`.
 - It will prompt you for your `GEMINI_API_KEY` and GitHub credentials.
+- Set a strong `ADMIN_API_KEY` to enable administrative API endpoints.
 - It will provide a summary of the details needed for your GitHub Webhook settings.
 
 ### 4. Run the Application
 ```bash
-uvicorn main.py:app --host 0.0.0.0 --port 8000 --reload
+uvicorn src.app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ---
@@ -212,15 +230,18 @@ If your server is deployed on a cloud VM or an accessible remote server, you do 
 ```
 
 ### Administrative Endpoints
-*Note: All administrative endpoints require the `X-Admin-Token` header for authentication.*
+*Note: Administrative endpoints are mounted under `/api/admin/*` and require both:*
+- *`ADMIN_API_KEY` configured in `.env` (required to enable admin API)*
+- *`X-Admin-Token` header matching `ADMIN_API_KEY`*
 
-| Method | Endpoint             | Description                                           |
-| :----- | :------------------- | :---------------------------------------------------- |
-| `GET`  | `/api/models`        | Retrieves a list of available Gemini models and specs. |
-| `GET`  | `/api/models/active` | Returns the name of the currently active model.       |
-| `POST` | `/api/models/active` | Updates the model used for future code reviews.       |
+| Method | Endpoint                         | Description                                           |
+| :----- | :------------------------------- | :---------------------------------------------------- |
+| `GET`  | `/api/admin/models`             | Retrieves a list of available Gemini models and specs. |
+| `GET`  | `/api/admin/config/active-model` | Returns the name of the currently active model.       |
+| `POST` | `/api/admin/config/active-model` | Updates the model used for future code reviews.       |
+| `GET`  | `/api/admin/history`            | Returns review history records.                       |
 
-**POST /api/models/active Payload:**
+**POST /api/admin/config/active-model Payload:**
 ```json
 {
   "model_name": "models/gemini-2.0-flash"

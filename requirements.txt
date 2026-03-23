@@ -26,6 +26,7 @@ pyasn1==0.6.3
 pyasn1_modules==0.4.2
 pycparser==3.0
 pydantic==2.12.5
+pydantic-settings==2.6.1
 pydantic_core==2.41.5
 PyGithub==2.8.1
 PyJWT==2.12.1
@@ -33,6 +34,7 @@ PyNaCl==1.6.2
 pyparsing==3.3.2
 python-dotenv==1.2.2
 requests==2.32.5
+sqlmodel==0.0.22
 starlette==0.52.1
 tqdm==4.67.3
 typing-inspection==0.4.2
