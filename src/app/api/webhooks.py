@@ -1,7 +1,6 @@
 import json
 import logging
 
-import anyio
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlmodel import Session
 
@@ -17,12 +16,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["webhooks"])
 
 
-def get_github_service(settings: Settings = Depends(get_settings)) -> GithubService:
-    return GithubService(settings)
+def get_github_service(request: Request, settings: Settings = Depends(get_settings)) -> GithubService:
+    return GithubService(settings, http_client=request.app.state.http_client)
 
 
-def get_gemini_service(settings: Settings = Depends(get_settings)) -> GeminiService:
-    return GeminiService(settings)
+def get_gemini_service(request: Request, settings: Settings = Depends(get_settings)) -> GeminiService:
+    return GeminiService(settings, client=request.app.state.gemini_client)
 
 
 @router.post("/webhook")
@@ -54,16 +53,9 @@ async def webhook_handler(
         if not (repo_full_name and pr_number):
             return {"status": "success", "message": "Webhook received, no PR action taken"}
 
-        github_client = github_service.get_client(installation_id)
-        github_token = github_service.get_diff_token(github_client, installation_id)
-
-        if not github_token:
-            raise HTTPException(status_code=500, detail="GitHub authentication configuration missing.")
-
         try:
-            diff_content = await anyio.to_thread.run_sync(
-                github_service.download_diff,
-                github_token,
+            diff_content = await github_service.download_diff(
+                installation_id,
                 repo_full_name,
                 pr_number,
             )
@@ -86,8 +78,7 @@ async def webhook_handler(
         error_response: HTTPException | None = None
 
         try:
-            review_content, review_token_count = await anyio.to_thread.run_sync(
-                gemini_service.generate_review,
+            review_content, review_token_count = await gemini_service.generate_review(
                 diff_content,
                 active_model,
             )
@@ -116,14 +107,17 @@ async def webhook_handler(
         session.add(history_row)
         session.commit()
 
-        await anyio.to_thread.run_sync(
-            github_service.post_github_comment,
-            github_client,
-            repo_full_name,
-            pr_number,
-            review_content,
-            active_model,
-        )
+        try:
+            await github_service.post_github_comment(
+                installation_id,
+                repo_full_name,
+                pr_number,
+                review_content,
+                active_model,
+            )
+        except GithubServiceError as exc:
+            logger.error("Failed to post review comment for PR #%s: %s", pr_number, exc)
+            raise HTTPException(status_code=500, detail=f"Failed to post GitHub review comment: {exc}") from exc
 
         if error_response:
             raise error_response

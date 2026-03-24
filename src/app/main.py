@@ -1,7 +1,10 @@
+from contextlib import asynccontextmanager
 import logging
 import logging.config
 
+import httpx
 from fastapi import FastAPI
+from google import genai
 from sqlmodel import Session
 
 from .api.admin import router as admin_router
@@ -43,14 +46,18 @@ logging.config.dictConfig(LOGGING_CONFIG)
 logger = logging.getLogger(__name__)
 
 
-async def lifespan(_: FastAPI):
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     settings = get_settings()
     init_db()
 
     with Session(engine) as session:
         ensure_app_config_singleton(session, settings.ai_model_name)
 
-    yield
+    async with httpx.AsyncClient(timeout=30.0) as http_client:
+        app.state.http_client = http_client
+        app.state.gemini_client = genai.Client(api_key=settings.gemini_api_key)
+        yield
 
 
 app = FastAPI(lifespan=lifespan)

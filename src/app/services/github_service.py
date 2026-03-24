@@ -3,8 +3,8 @@ import logging
 from typing import Optional
 
 import httpx
-from fastapi import HTTPException
-from github import Auth, Github
+from gidgethub import BadRequest, HTTPException as GitHubHTTPException, apps
+from gidgethub.httpx import GitHubAPI
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from ..core.config import Settings
@@ -17,48 +17,39 @@ class GithubServiceError(Exception):
 
 
 class GithubService:
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, http_client: httpx.AsyncClient):
         self.settings = settings
+        self.http_client = http_client
 
-    def get_client(self, installation_id: Optional[int] = None) -> Github:
-        if self.settings.github_app_id and self.settings.github_private_key:
+    async def _get_token(self, installation_id: Optional[int]) -> str:
+        if installation_id and self.settings.github_app_id and self.settings.github_private_key:
             try:
                 private_key = self.settings.github_private_key.replace("\\n", "\n")
-                if installation_id:
-                    auth = Auth.AppInstallationAuth(self.settings.github_app_id, private_key, installation_id)
-                else:
-                    auth = Auth.AppAuth(self.settings.github_app_id, private_key)
-                return Github(auth=auth)
+                token_response = await apps.get_installation_access_token(
+                    self.http_client,
+                    installation_id=str(installation_id),
+                    app_id=str(self.settings.github_app_id),
+                    private_key=private_key,
+                )
+                return token_response["token"]
             except Exception as exc:
-                logger.error("Failed to initialize GitHub App auth: %s", exc)
-                raise HTTPException(status_code=500, detail="GitHub App authentication failed.") from exc
+                logger.exception("Failed to generate GitHub installation token: %s", exc)
+                raise GithubServiceError("GitHub App authentication failed.") from exc
 
         if self.settings.github_token:
             logger.warning("Using GITHUB_TOKEN (PAT) is deprecated. Please switch to GitHub App.")
-            return Github(auth=Auth.Token(self.settings.github_token))
+            return self.settings.github_token
 
         logger.error("No GitHub authentication configured.")
-        raise HTTPException(status_code=500, detail="GitHub client not configured.")
-
-    def get_diff_token(self, github_client: Github, installation_id: Optional[int]) -> Optional[str]:
-        if installation_id and self.settings.github_app_id and self.settings.github_private_key:
-            try:
-                return github_client.get_auth().token
-            except Exception as exc:
-                logger.warning("Could not extract installation token: %s", exc)
-
-        return self.settings.github_token
+        raise GithubServiceError("GitHub authentication configuration missing.")
 
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
         retry=retry_if_exception_type(GithubServiceError),
     )
-    def download_diff(self, github_token: str, repo_full_name: str, pr_number: int) -> str:
-        if not github_token:
-            logger.error("github_token is required for download_diff.")
-            raise GithubServiceError("github_token is required for download_diff")
-
+    async def download_diff(self, installation_id: Optional[int], repo_full_name: str, pr_number: int) -> str:
+        github_token = await self._get_token(installation_id)
         url = f"https://api.github.com/repos/{repo_full_name}/pulls/{pr_number}"
         headers = {
             "Authorization": f"token {github_token}",
@@ -66,8 +57,7 @@ class GithubService:
         }
 
         try:
-            with httpx.Client(timeout=30.0) as client:
-                response = client.get(url, headers=headers)
+            response = await self.http_client.get(url, headers=headers)
 
             if response.status_code == 200:
                 return response.text
@@ -84,6 +74,8 @@ class GithubService:
 
             logger.error(error_message)
             raise GithubServiceError(error_message)
+        except httpx.TimeoutException as exc:
+            raise GithubServiceError(f"Timed out during diff download: {exc}") from exc
         except httpx.HTTPError as exc:
             raise GithubServiceError(f"HTTP error during diff download: {exc}") from exc
         except GithubServiceError:
@@ -95,13 +87,21 @@ class GithubService:
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception_type(GithubServiceError),
     )
-    def post_github_comment(self, github_client: Github, repo_full_name: str, pr_number: int, comment_body: str, model_name: str) -> None:
-        repo = github_client.get_repo(repo_full_name)
-        pr = repo.get_pull(pr_number)
+    async def post_github_comment(
+        self,
+        installation_id: Optional[int],
+        repo_full_name: str,
+        pr_number: int,
+        comment_body: str,
+        model_name: str,
+    ) -> None:
+        github_token = await self._get_token(installation_id)
+        github_api = GitHubAPI(self.http_client, self.settings.app_name, oauth_token=github_token)
 
         header = f"{self.settings.ai_review_header}\n\n{self.settings.ai_review_disclaimer}\n\n"
-        footer = f"\n\n---\n<sub> Powered by {model_name} • {self.settings.app_name}</sub>"
+        footer = f"\n\n---\n<sub>Powered by {model_name} - {self.settings.app_name}</sub>"
 
         max_body_length = self.settings.github_comment_limit - len(header) - len(footer) - 100
         if len(comment_body) > max_body_length:
@@ -110,5 +110,16 @@ class GithubService:
             comment_body = comment_body[: max_body_length - len(truncation_msg)] + truncation_msg
 
         formatted_comment = f"{header}{comment_body}{footer}"
-        pr.create_issue_comment(formatted_comment)
-        logger.info("Successfully posted comment to PR #%s", pr_number)
+        try:
+            await github_api.post(
+                f"/repos/{repo_full_name}/issues/{pr_number}/comments",
+                data={"body": formatted_comment},
+            )
+            logger.info("Successfully posted comment to PR #%s", pr_number)
+        except httpx.TimeoutException as exc:
+            raise GithubServiceError(f"Timed out while posting GitHub comment: {exc}") from exc
+        except (BadRequest, GitHubHTTPException) as exc:
+            raise GithubServiceError(f"GitHub API error while posting comment: {exc}") from exc
+        except Exception as exc:
+            logger.exception("Unexpected error posting GitHub comment: %s", exc)
+            raise GithubServiceError(f"Unexpected error posting GitHub comment: {exc}") from exc

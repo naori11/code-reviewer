@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlmodel import Session, desc, select
 
 from ..core.config import Settings, get_settings
@@ -19,8 +19,8 @@ from ..services.gemini_service import GeminiService
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
-def get_gemini_service(settings: Settings = Depends(get_settings)) -> GeminiService:
-    return GeminiService(settings)
+def get_gemini_service(request: Request, settings: Settings = Depends(get_settings)) -> GeminiService:
+    return GeminiService(settings, client=request.app.state.gemini_client)
 
 
 @router.get("/models", response_model=ModelsResponse)
@@ -29,7 +29,7 @@ async def list_models(
     gemini_service: GeminiService = Depends(get_gemini_service),
 ):
     try:
-        models = gemini_service.list_models()
+        models = await gemini_service.list_models()
         return ModelsResponse(status="success", count=len(models), models=models)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to list models: {exc}") from exc
@@ -54,7 +54,7 @@ async def set_active_model(
     gemini_service: GeminiService = Depends(get_gemini_service),
 ):
     try:
-        gemini_service.validate_model(payload.model_name)
+        await gemini_service.validate_model(payload.model_name)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Invalid or inaccessible model: {payload.model_name}") from exc
 
