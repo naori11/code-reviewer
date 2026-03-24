@@ -1,7 +1,8 @@
 import logging
 
 from google import genai
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from tenacity import retry_if_exception_type, stop_after_attempt, wait_exponential
+from tenacity.asyncio import AsyncRetrying
 
 from ..core.config import Settings
 
@@ -19,28 +20,25 @@ class GeminiServiceError(Exception):
 
 
 class GeminiService:
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, client: genai.Client | None = None):
         self.settings = settings
-        self.client = genai.Client(api_key=settings.gemini_api_key)
+        self.client = client or genai.Client(api_key=settings.gemini_api_key)
         self.prompt_instructions = settings.ai_review_prompt
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_exception_type(Exception),
-    )
-    def count_tokens(self, model_name: str, contents: str) -> int:
-        token_count_response = self.client.models.count_tokens(model=model_name, contents=contents)
-        return token_count_response.total_tokens
+    async def count_tokens(self, model_name: str, contents: str) -> int:
+        async for attempt in AsyncRetrying(
+            stop=stop_after_attempt(3),
+            wait=wait_exponential(multiplier=1, min=2, max=10),
+            retry=retry_if_exception_type(Exception),
+        ):
+            with attempt:
+                token_count_response = await self.client.aio.models.count_tokens(model=model_name, contents=contents)
+                return token_count_response.total_tokens
+        raise GeminiServiceError("Failed to count Gemini tokens after retries.")
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_exception_type(GeminiServiceError),
-    )
-    def generate_review(self, diff_content: str, model_name: str) -> tuple[str, int]:
+    async def generate_review(self, diff_content: str, model_name: str) -> tuple[str, int]:
         try:
-            token_count = self.count_tokens(model_name=model_name, contents=diff_content)
+            token_count = await self.count_tokens(model_name=model_name, contents=diff_content)
             logger.info("Diff token count: %s", token_count)
 
             if token_count > self.settings.max_tokens:
@@ -52,17 +50,24 @@ class GeminiService:
                 raise TokenLimitExceededError(message, token_count)
 
             full_prompt = f"{self.prompt_instructions}\n\nCode Diff:\n{diff_content}"
-            response = self.client.models.generate_content(model=model_name, contents=full_prompt)
-            return response.text or "No significant issues found.", token_count
+            async for attempt in AsyncRetrying(
+                stop=stop_after_attempt(3),
+                wait=wait_exponential(multiplier=1, min=2, max=10),
+                retry=retry_if_exception_type(Exception),
+            ):
+                with attempt:
+                    response = await self.client.aio.models.generate_content(model=model_name, contents=full_prompt)
+                    return response.text or "No significant issues found.", token_count
+            raise GeminiServiceError("Failed to generate Gemini review after retries.")
         except TokenLimitExceededError:
             raise
         except Exception as exc:
-            logger.exception("Error calling Gemini API: %s", exc)
+            logger.exception("Async Gemini API error: %s", exc)
             raise GeminiServiceError(f"Error calling Gemini API: {exc}") from exc
 
-    def list_models(self) -> list[dict]:
+    async def list_models(self) -> list[dict]:
         models: list[dict] = []
-        for model in self.client.models.list():
+        async for model in self.client.aio.models.list():
             name = getattr(model, "name", None) or "unknown"
             display_name = getattr(model, "display_name", None) or name
             methods = getattr(model, "supported_generation_methods", []) or getattr(model, "supported_methods", [])
@@ -86,5 +91,5 @@ class GeminiService:
         models.sort(key=lambda x: x["display_name"])
         return models
 
-    def validate_model(self, model_name: str) -> None:
-        self.client.models.get(model=model_name)
+    async def validate_model(self, model_name: str) -> None:
+        await self.client.aio.models.get(model=model_name)
