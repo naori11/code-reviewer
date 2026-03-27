@@ -1,5 +1,8 @@
 # Code Review Automator
 
+[![Lint and Test](https://github.com/naori11/code-reviewer/actions/workflows/lint-and-test.yml/badge.svg)](https://github.com/naori11/code-reviewer/actions/workflows/lint-and-test.yml)
+[![Release](https://github.com/naori11/code-reviewer/actions/workflows/release.yml/badge.svg)](https://github.com/naori11/code-reviewer/actions/workflows/release.yml)
+
 An automated, AI-powered code review assistant built with **FastAPI** and **Google Gemini**. This service listens for GitHub Pull Request webhooks, analyzes code diffs for bugs, security vulnerabilities, and performance issues, and posts a detailed, "brutal" senior-level review directly back to the PR as a comment.
 
 ---
@@ -247,6 +250,21 @@ If your server is deployed on a cloud VM or an accessible remote server, you do 
   "model_name": "models/gemini-2.0-flash"
 }
 ```
+
+---
+
+## ✅ Development Quality Checks
+
+Run quality checks locally before opening a PR:
+
+```bash
+python -m pytest tests -q
+ruff check .
+ruff format --check .
+mypy src reviewer.py
+```
+
+For contributor workflow details, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
