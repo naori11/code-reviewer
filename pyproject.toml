@@ -37,11 +37,5 @@ show_error_codes = true
 module = [
     "src.app.models.entities",
     "src.app.api.admin",
-    "src.app.core.config",
-    "src.app.services.github_service",
-    "reviewer",
-    "tests.unit.test_github_service",
-    "tests.unit.*",
-    "test_github_service",
 ]
 ignore_errors = true
