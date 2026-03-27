@@ -16,14 +16,12 @@ from github import Github, Auth
 CONFIG_DIR = Path.home() / ".code_reviewer"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
+
 def save_client_config(url: str, token: str, auto_restart: bool = False):
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     with open(CONFIG_FILE, "w") as f:
-        json.dump({
-            "url": url.rstrip("/"),
-            "token": token,
-            "auto_restart_on_config_change": auto_restart
-        }, f)
+        json.dump({"url": url.rstrip("/"), "token": token, "auto_restart_on_config_change": auto_restart}, f)
+
 
 def load_client_config():
     if not CONFIG_FILE.exists():
@@ -35,6 +33,7 @@ def load_client_config():
         if "auto_restart_on_config_change" not in config:
             config["auto_restart_on_config_change"] = False
         return config
+
 
 def restart_server():
     """Executes docker-compose restart to apply changes."""
@@ -58,7 +57,9 @@ def restart_server():
     except Exception as e:
         click.secho(f"Error during restart: {str(e)}", fg="red")
 
-@click.group(help="""
+
+@click.group(
+    help="""
 Code Reviewer CLI - Manage your Gemini models and server setup.
 
 \b
@@ -66,9 +67,11 @@ Getting Started:
   1. Run 'setup-server' on your VM to configure the environment.
   2. Run 'init' to connect this CLI to your server.
   3. Use 'health' to verify your API connections.
-""")
+"""
+)
 def cli():
     pass
+
 
 @cli.command()
 @click.option("--url", help="The URL of your FastAPI server (e.g., http://localhost:8000).")
@@ -82,23 +85,25 @@ def init(url, token, auto_restart):
     if env_path.exists():
         load_dotenv()
         auto_token = os.getenv("WEBHOOK_SECRET")
-    
+
     if not url:
         url = click.prompt("Server URL", default="http://localhost:8000")
-    
+
     url = url.rstrip("/")
-    
+
     # Verify server connectivity (similar to status command)
     click.echo(f"Verifying connection to {url}...")
     try:
         # Use a simple health check or the active model endpoint
-        # We don't have the token yet if it's not provided, so we might get a 403 or 401, 
+        # We don't have the token yet if it's not provided, so we might get a 403 or 401,
         # but as long as we get a response, the URL is likely correct.
         response = httpx.get(f"{url}/api/admin/config/active-model", timeout=5.0)
         if response.status_code in [200, 403]:
             click.secho(f"✔ Server reached successfully.", fg="green")
         else:
-            click.secho(f"⚠ Server returned unexpected status {response.status_code}. It might be misconfigured.", fg="yellow")
+            click.secho(
+                f"⚠ Server returned unexpected status {response.status_code}. It might be misconfigured.", fg="yellow"
+            )
     except (httpx.ConnectError, httpx.ConnectTimeout):
         click.secho(f"✘ Error: Could not connect to {url}.", fg="red")
         click.secho("The server may not be running or the address typed is wrong.", fg="red")
@@ -111,7 +116,7 @@ def init(url, token, auto_restart):
         if auto_token:
             if click.confirm(f"Found WEBHOOK_SECRET in local .env. Use it?", default=True):
                 token = auto_token
-        
+
         if not token:
             token = click.prompt("Admin Token (WEBHOOK_SECRET)", hide_input=True)
 
@@ -121,16 +126,18 @@ def init(url, token, auto_restart):
     save_client_config(url, token, auto_restart)
     click.secho(f"✔ Successfully initialized! Config saved to {CONFIG_FILE}", fg="green")
 
+
 @cli.command()
 @click.option("--restart", is_flag=True, help="Force a server restart after setup.")
 def setup_server(restart):
     """Interactive wizard to configure the server's .env file."""
     click.secho("\n🚀 Code Reviewer Server Onboarding", fg="cyan", bold=True)
-    
+
     env_path = Path(".env")
     if not env_path.exists():
         if Path(".env.example").exists():
             import shutil
+
             shutil.copy(".env.example", ".env")
             click.echo("✔ Created .env from .env.example")
         else:
@@ -138,7 +145,7 @@ def setup_server(restart):
             click.echo("✔ Created new .env file")
 
     load_dotenv()
-    
+
     config_changed = False
 
     # 1. WEBHOOK_SECRET
@@ -174,26 +181,26 @@ def setup_server(restart):
         method = "GitHub App" if has_app else "Personal Access Token"
         click.secho(f"✔ Currently using: {method}", fg="green")
         if not click.confirm("Do you want to change authentication method?", default=False):
-            auth_choice = 'skip'
+            auth_choice = "skip"
         else:
-            auth_choice = click.prompt("Choose method", type=click.Choice(['app', 'pat']), default='app')
+            auth_choice = click.prompt("Choose method", type=click.Choice(["app", "pat"]), default="app")
     else:
         click.echo("Method A (GitHub App): More secure, supports granular permissions.")
         click.echo("Method B (PAT): Simple setup using a personal token.")
-        auth_choice = click.prompt("Choose method", type=click.Choice(['app', 'pat']), default='app')
+        auth_choice = click.prompt("Choose method", type=click.Choice(["app", "pat"]), default="app")
 
-    if auth_choice == 'app':
+    if auth_choice == "app":
         app_id = click.prompt("Enter GITHUB_APP_ID", default=os.getenv("GITHUB_APP_ID", ""))
         set_key(".env", "GITHUB_APP_ID", app_id)
         click.echo("Hint: Private keys look like '-----BEGIN RSA PRIVATE KEY-----...'")
         private_key = click.prompt("Enter GITHUB_PRIVATE_KEY", default=os.getenv("GITHUB_PRIVATE_KEY", ""))
         set_key(".env", "GITHUB_PRIVATE_KEY", private_key)
-        set_key(".env", "GITHUB_TOKEN", "") # Clear PAT
+        set_key(".env", "GITHUB_TOKEN", "")  # Clear PAT
         config_changed = True
-    elif auth_choice == 'pat':
+    elif auth_choice == "pat":
         pat_token = click.prompt("Enter GITHUB_TOKEN", default=os.getenv("GITHUB_TOKEN", ""))
         set_key(".env", "GITHUB_TOKEN", pat_token)
-        set_key(".env", "GITHUB_APP_ID", "") # Clear App
+        set_key(".env", "GITHUB_APP_ID", "")  # Clear App
         set_key(".env", "GITHUB_PRIVATE_KEY", "")
         config_changed = True
 
@@ -211,7 +218,11 @@ def setup_server(restart):
         except Exception:
             auto_restart = False
 
-        if restart or auto_restart or click.confirm("Configuration updated. Restart the server container to apply changes?", default=True):
+        if (
+            restart
+            or auto_restart
+            or click.confirm("Configuration updated. Restart the server container to apply changes?", default=True)
+        ):
             restart_server()
         else:
             click.secho("\nNote: Please manually run `docker-compose restart` for changes to take effect.", fg="yellow")
@@ -224,12 +235,13 @@ def setup_server(restart):
     click.echo("  5. Which events? Select 'Individual events' > 'Pull requests'.")
     click.echo("\nNext: Run 'reviewer init' on your client machine.")
 
+
 @cli.command()
 def health():
     """Verify that your Gemini and GitHub API connections are working."""
     load_dotenv()
     click.echo("Checking API Health...")
-    
+
     # 1. Gemini Check
     gemini_key = os.getenv("GEMINI_API_KEY")
     if not gemini_key:
@@ -238,7 +250,7 @@ def health():
         try:
             client = genai.Client(api_key=gemini_key)
             # Try to list models as a connectivity test
-            client.models.list(config={'page_size': 1})
+            client.models.list(config={"page_size": 1})
             click.secho("✔ Gemini API: Connected and Authorized", fg="green")
         except Exception as e:
             click.secho(f"✘ Gemini API: Failed - {str(e)}", fg="red")
@@ -246,24 +258,25 @@ def health():
     # 2. GitHub Check
     app_id = os.getenv("GITHUB_APP_ID")
     pat = os.getenv("GITHUB_TOKEN")
-    
+
     try:
         if app_id:
-            private_key = os.getenv("GITHUB_PRIVATE_KEY", "").replace('\\n', '\n')
-            auth = Auth.AppAuth(app_id, private_key)
-            g = Github(auth=auth)
+            private_key = os.getenv("GITHUB_PRIVATE_KEY", "").replace("\\n", "\n")
+            app_auth = Auth.AppAuth(app_id, private_key)
+            github_client = Github(auth=app_auth)
             # We can't easily test 'AppAuth' without an installation ID, but we can check the JWT
-            g.get_app() 
+            github_client.get_app()
             click.secho("✔ GitHub App: Authentication Successful", fg="green")
         elif pat:
-            auth = Auth.Token(pat)
-            g = Github(auth=auth)
-            user = g.get_user().login
+            token_auth = Auth.Token(pat)
+            github_client = Github(auth=token_auth)
+            user = github_client.get_user().login
             click.secho(f"✔ GitHub PAT: Authenticated as {user}", fg="green")
         else:
             click.secho("✘ GitHub: No credentials found in .env", fg="red")
     except Exception as e:
         click.secho(f"✘ GitHub API: Failed - {str(e)}", fg="red")
+
 
 @cli.command()
 def env():
@@ -279,13 +292,14 @@ def env():
         else:
             click.secho(f"  {var:<18}: NOT SET", fg="yellow")
 
+
 @cli.command()
 def test_webhook():
     """Simulate a GitHub 'ping' event to test server signature verification."""
     config = load_client_config()
     load_dotenv()
     secret = os.getenv("WEBHOOK_SECRET")
-    
+
     if not secret:
         click.secho("Error: WEBHOOK_SECRET not found in .env. Cannot sign payload.", fg="red")
         return
@@ -294,54 +308,49 @@ def test_webhook():
     payload = {
         "zen": "Everything is better with a CLI.",
         "hook_id": 123456789,
-        "hook": {
-            "type": "App",
-            "id": 123456789,
-            "active": True,
-            "events": ["pull_request"]
-        }
+        "hook": {"type": "App", "id": 123456789, "active": True, "events": ["pull_request"]},
     }
     body = json.dumps(payload)
-    
+
     # Generate HMAC signature
     signature = "sha256=" + hmac.new(secret.encode(), body.encode(), hashlib.sha256).hexdigest()
-    
-    headers = {
-        "X-Hub-Signature-256": signature,
-        "Content-Type": "application/json",
-        "X-GitHub-Event": "ping"
-    }
-    
+
+    headers = {"X-Hub-Signature-256": signature, "Content-Type": "application/json", "X-GitHub-Event": "ping"}
+
     click.echo(f"Sending test 'ping' to {config['url']}/webhook...")
     try:
         response = httpx.post(f"{config['url']}/webhook", content=body, headers=headers)
         if response.status_code == 200:
-            click.secho(f"✔ Success: Signature verified. Server responded: {response.json().get('message')}", fg="green")
+            click.secho(
+                f"✔ Success: Signature verified. Server responded: {response.json().get('message')}", fg="green"
+            )
         else:
             click.secho(f"✘ Failed: Server returned {response.status_code} - {response.text}", fg="red")
     except Exception as e:
         click.secho(f"✘ Error connecting to server: {str(e)}", fg="red")
+
 
 @cli.command()
 def list():
     """List Gemini models suitable for code review."""
     config = load_client_config()
     headers = {"X-Admin-Token": config["token"]}
-    
+
     try:
         response = httpx.get(f"{config['url']}/api/admin/models", headers=headers, timeout=10.0)
         response.raise_for_status()
         data = response.json()
-        
+
         click.echo(f"\n{'DISPLAY NAME':<35} | {'MODEL ID':<45}")
         click.echo("-" * 85)
-        
+
         for m in data.get("models", []):
             click.echo(f"{m['display_name']:<35} | {m['model_id']:<45}")
-            
+
         click.echo(f"\nTotal: {data.get('count', 0)} models found.")
     except Exception as e:
         click.secho(f"Error: {str(e)}", fg="red")
+
 
 @cli.command()
 @click.argument("model_id")
@@ -350,7 +359,7 @@ def set(model_id):
     config = load_client_config()
     headers = {"X-Admin-Token": config["token"]}
     payload = {"model_name": model_id}
-    
+
     try:
         response = httpx.post(f"{config['url']}/api/admin/config/active-model", headers=headers, json=payload)
         response.raise_for_status()
@@ -358,13 +367,14 @@ def set(model_id):
     except Exception as e:
         click.secho(f"Error: {str(e)}", fg="red")
 
+
 @cli.command()
 def status():
     """Check server connection and show active model."""
     config = load_client_config()
-    url = config['url']
+    url = config["url"]
     headers = {"X-Admin-Token": config["token"]}
-    
+
     click.echo(f"Checking connection to {url}...")
     try:
         response = httpx.get(f"{url}/api/admin/config/active-model", headers=headers, timeout=5.0)
@@ -385,6 +395,7 @@ def status():
     except Exception as e:
         click.secho(f"✘ Server Status: Offline/Error", fg="red")
         click.echo(f"Error detail: {str(e)}")
+
 
 if __name__ == "__main__":
     cli()

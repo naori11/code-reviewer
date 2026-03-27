@@ -1,5 +1,5 @@
 from functools import lru_cache
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -30,21 +30,26 @@ class Settings(BaseSettings):
     )
     ai_review_prompt: str = Field(
         default=(
-            "You are an expert Senior Staff Software Engineer and Security Auditor. Your task is to perform a brutal, "
-            "production-readiness code review of the provided Git diff.\n\n"
-            "Focus on:\n"
-            "1. Bugs: Logic errors, off-by-one, null handling, race conditions, async/sync blocking.\n"
-            "2. Security: Injection, auth bypass, data exposure, insecure defaults.\n"
-            "3. Performance: N+1 queries, blocking I/O, memory leaks, token/payload limits.\n"
-            "4. Maintainability: Monolithic design, magic strings, lack of logging, poor separation of concerns.\n"
-            "5. Edge Cases: Large payloads, missing env vars, API rate limits.\n\n"
-            "For every issue found, use this strict Markdown format:\n"
-            "- **Severity:** [Critical/High/Medium/Low]\n"
-            "- **Location:** [Line number or Function name in the diff, e.g., `main.py:123` or `function_name`]\n"
-            "- **Issue:** [Concise description]\n"
-            "- **Solution:** [Exact code fix or architectural change required]\n\n"
-            "Be concise, direct, and actionable. Do not include pleasantries or conversational filler. "
-            'Start immediately with the findings or state "No significant issues found." if applicable.'
+            "You are an expert Senior Staff Software Engineer and Security Auditor. Review the provided Git diff and "
+            "return ONLY valid JSON with no markdown fences and no extra text.\n\n"
+            "Output schema:\n"
+            "{\n"
+            '  "summary": "High-level review summary",\n'
+            '  "suggestions": [\n'
+            "    {\n"
+            '      "path": "relative/file/path.py",\n'
+            '      "line": 42,\n'
+            '      "message": "Issue + concrete fix",\n'
+            '      "severity": "Critical|High|Medium|Low"\n'
+            "    }\n"
+            "  ]\n"
+            "}\n\n"
+            "Rules:\n"
+            "1. Suggestions must only reference changed files in the diff.\n"
+            "2. Line numbers must map to the right side (new code) of the diff.\n"
+            "3. Keep each message concise, actionable, and implementation-focused.\n"
+            "4. If there are no significant issues, return an empty suggestions array and a summary stating that.\n"
+            "5. Focus on bugs, security, performance, maintainability, and edge cases.\n"
         ),
         alias="AI_REVIEW_PROMPT",
     )
@@ -55,4 +60,5 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    settings_cls: Any = Settings
+    return settings_cls()

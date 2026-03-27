@@ -1,4 +1,6 @@
+import json
 import logging
+from typing import Any
 
 from google import genai
 from tenacity import retry_if_exception_type, stop_after_attempt, wait_exponential
@@ -19,7 +21,13 @@ class GeminiServiceError(Exception):
     pass
 
 
+class StructuredReviewParseError(GeminiServiceError):
+    pass
+
+
 class GeminiService:
+    VALID_SEVERITIES = {"critical": "Critical", "high": "High", "medium": "Medium", "low": "Low"}
+
     def __init__(self, settings: Settings, client: genai.Client | None = None):
         self.settings = settings
         self.client = client or genai.Client(api_key=settings.gemini_api_key)
@@ -36,7 +44,64 @@ class GeminiService:
                 return token_count_response.total_tokens
         raise GeminiServiceError("Failed to count Gemini tokens after retries.")
 
-    async def generate_review(self, diff_content: str, model_name: str) -> tuple[str, int]:
+    def _normalize_structured_review(self, raw_text: str) -> dict[str, Any]:
+        if not raw_text or not raw_text.strip():
+            raise StructuredReviewParseError("Gemini returned empty structured review output.")
+
+        try:
+            parsed = json.loads(raw_text)
+        except json.JSONDecodeError as exc:
+            raise StructuredReviewParseError("Gemini structured review output is not valid JSON.") from exc
+
+        if not isinstance(parsed, dict):
+            raise StructuredReviewParseError("Gemini structured review output must be a JSON object.")
+
+        summary = parsed.get("summary", "")
+        suggestions = parsed.get("suggestions", [])
+
+        if not isinstance(summary, str):
+            raise StructuredReviewParseError("Gemini structured review output field 'summary' must be a string.")
+        if not isinstance(suggestions, list):
+            raise StructuredReviewParseError("Gemini structured review output field 'suggestions' must be an array.")
+
+        normalized_suggestions: list[dict[str, Any]] = []
+        for item in suggestions:
+            if not isinstance(item, dict):
+                continue
+
+            path = item.get("path")
+            line = item.get("line")
+            message = item.get("message")
+            severity = item.get("severity")
+
+            if not isinstance(path, str) or not path.strip():
+                continue
+            if isinstance(line, str) and line.isdigit():
+                line = int(line)
+            if not isinstance(line, int) or line <= 0:
+                continue
+            if not isinstance(message, str) or not message.strip():
+                continue
+
+            severity_normalized = "Medium"
+            if isinstance(severity, str):
+                severity_normalized = self.VALID_SEVERITIES.get(severity.strip().lower(), "Medium")
+
+            normalized_suggestions.append(
+                {
+                    "path": path.strip(),
+                    "line": line,
+                    "message": message.strip(),
+                    "severity": severity_normalized,
+                }
+            )
+
+        return {
+            "summary": summary.strip() or "No significant issues found.",
+            "suggestions": normalized_suggestions,
+        }
+
+    async def generate_structured_review(self, diff_content: str, model_name: str) -> tuple[dict[str, Any], int]:
         try:
             token_count = await self.count_tokens(model_name=model_name, contents=diff_content)
             logger.info("Diff token count: %s", token_count)
@@ -56,14 +121,37 @@ class GeminiService:
                 retry=retry_if_exception_type(Exception),
             ):
                 with attempt:
-                    response = await self.client.aio.models.generate_content(model=model_name, contents=full_prompt)
-                    return response.text or "No significant issues found.", token_count
-            raise GeminiServiceError("Failed to generate Gemini review after retries.")
+                    response = await self.client.aio.models.generate_content(
+                        model=model_name,
+                        contents=full_prompt,
+                        config={"response_mime_type": "application/json"},
+                    )
+                    normalized = self._normalize_structured_review(response.text or "")
+                    return normalized, token_count
+            raise GeminiServiceError("Failed to generate Gemini structured review after retries.")
         except TokenLimitExceededError:
+            raise
+        except StructuredReviewParseError:
             raise
         except Exception as exc:
             logger.exception("Async Gemini API error: %s", exc)
             raise GeminiServiceError(f"Error calling Gemini API: {exc}") from exc
+
+    async def generate_review(self, diff_content: str, model_name: str) -> tuple[str, int]:
+        structured_review, token_count = await self.generate_structured_review(diff_content, model_name)
+
+        lines: list[str] = [structured_review.get("summary", "No significant issues found.")]
+        suggestions = structured_review.get("suggestions", [])
+        if suggestions:
+            lines.append("")
+            for suggestion in suggestions:
+                lines.append(
+                    f"- **Severity:** {suggestion['severity']}\n"
+                    f"  **Location:** `{suggestion['path']}:{suggestion['line']}`\n"
+                    f"  **Issue/Solution:** {suggestion['message']}"
+                )
+
+        return "\n".join(lines), token_count
 
     async def list_models(self) -> list[dict]:
         models: list[dict] = []
