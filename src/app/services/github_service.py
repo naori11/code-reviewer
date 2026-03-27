@@ -27,8 +27,9 @@ class GithubService:
         if installation_id and self.settings.github_app_id and self.settings.github_private_key:
             try:
                 private_key = self.settings.github_private_key.replace("\\n", "\n")
+                github_api = GitHubAPI(self.http_client, self.settings.app_name)
                 token_response = await apps.get_installation_access_token(
-                    self.http_client,
+                    github_api,
                     installation_id=str(installation_id),
                     app_id=str(self.settings.github_app_id),
                     private_key=private_key,
@@ -222,9 +223,7 @@ class GithubService:
                         body = str(item.get("body", "")).replace("\n", " ").strip()
                         fallback_lines.append(f"- `{item['path']}:{item['line']}` — {body}")
                     if len(sanitized_comments) > 20:
-                        fallback_lines.append(
-                            f"- ...and {len(sanitized_comments) - 20} more suggestions omitted."
-                        )
+                        fallback_lines.append(f"- ...and {len(sanitized_comments) - 20} more suggestions omitted.")
 
                 await self.post_github_comment(
                     installation_id=installation_id,
