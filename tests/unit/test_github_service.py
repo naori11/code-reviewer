@@ -1,12 +1,14 @@
 import asyncio
 import json
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import AsyncMock
 
 import httpx
 import pytest
 from tenacity import RetryError
 
+from src.app.core.config import Settings
 from src.app.services.github_service import GithubService, GithubServiceError
 
 
@@ -54,7 +56,7 @@ def _settings() -> SimpleNamespace:
 
 def test_download_diff_success(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _FakeHTTPClient(_FakeResponse(status_code=200, text="diff body"))
-    service = GithubService(settings=_settings(), http_client=client)
+    service = GithubService(settings=cast(Settings, _settings()), http_client=cast(httpx.AsyncClient, client))
 
     async def _fake_token(*args, **kwargs):
         return {"token": "ghs_test"}
@@ -72,7 +74,7 @@ def test_download_diff_raises_service_error_on_non_200(monkeypatch: pytest.Monke
     client = _FakeHTTPClient(
         _FakeResponse(status_code=403, text='{"message":"forbidden"}', json_data={"message": "forbidden"})
     )
-    service = GithubService(settings=_settings(), http_client=client)
+    service = GithubService(settings=cast(Settings, _settings()), http_client=cast(httpx.AsyncClient, client))
 
     async def _fake_token(*args, **kwargs):
         return {"token": "ghs_test"}
@@ -84,7 +86,7 @@ def test_download_diff_raises_service_error_on_non_200(monkeypatch: pytest.Monke
 
 
 def test_post_github_comment_truncates_long_body(monkeypatch: pytest.MonkeyPatch) -> None:
-    service = GithubService(settings=_settings(), http_client=AsyncMock())
+    service = GithubService(settings=cast(Settings, _settings()), http_client=cast(httpx.AsyncClient, AsyncMock()))
 
     async def _fake_get_token(*args, **kwargs):
         return "ghs_test"
@@ -113,7 +115,7 @@ def test_post_github_comment_truncates_long_body(monkeypatch: pytest.MonkeyPatch
 
 
 def test_post_github_comment_wraps_http_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
-    service = GithubService(settings=_settings(), http_client=AsyncMock())
+    service = GithubService(settings=cast(Settings, _settings()), http_client=cast(httpx.AsyncClient, AsyncMock()))
 
     async def _fake_get_token(*args, **kwargs):
         return "ghs_test"
