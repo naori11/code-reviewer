@@ -253,22 +253,10 @@ If your server is deployed on a cloud VM or an accessible remote server, you do 
 
 ---
 
-## ✅ Development Quality Checks
-
-Run quality checks locally before opening a PR:
-
-```bash
-python -m pytest tests -q
-ruff check .
-ruff format --check .
-mypy src reviewer.py
-```
-
-For contributor workflow details, see [CONTRIBUTING.md](CONTRIBUTING.md).
-
----
-
 ## 🤝 Contributing
+
+For contributor workflow details, including local quality checks, see [CONTRIBUTING.md](CONTRIBUTING.md).
+
 
 1. **Open an Issue:** Describe the bug or feature request.
 2. **Fork & Branch:** Create a branch for your fix/feature.
