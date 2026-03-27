@@ -1,5 +1,8 @@
 # Code Review Automator
 
+[![Lint and Test](https://github.com/naori11/code-reviewer/actions/workflows/lint-and-test.yml/badge.svg)](https://github.com/naori11/code-reviewer/actions/workflows/lint-and-test.yml)
+[![Release](https://github.com/naori11/code-reviewer/actions/workflows/release.yml/badge.svg)](https://github.com/naori11/code-reviewer/actions/workflows/release.yml)
+
 An automated, AI-powered code review assistant built with **FastAPI** and **Google Gemini**. This service listens for GitHub Pull Request webhooks, analyzes code diffs for bugs, security vulnerabilities, and performance issues, and posts a detailed, "brutal" senior-level review directly back to the PR as a comment.
 
 ---
@@ -251,6 +254,9 @@ If your server is deployed on a cloud VM or an accessible remote server, you do 
 ---
 
 ## 🤝 Contributing
+
+For contributor workflow details, including local quality checks, see [CONTRIBUTING.md](CONTRIBUTING.md).
+
 
 1. **Open an Issue:** Describe the bug or feature request.
 2. **Fork & Branch:** Create a branch for your fix/feature.

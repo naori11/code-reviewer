@@ -11,7 +11,7 @@ engine = create_engine(settings.database_url, connect_args=connect_args)
 
 
 def init_db() -> None:
-    from ..models import entities  # noqa: F401
+    from ..models import entities  # noqa: F401  # Ensure SQLModel metadata includes all table definitions.
 
     SQLModel.metadata.create_all(engine)
 

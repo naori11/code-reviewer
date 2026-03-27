@@ -17,3 +17,31 @@ py-modules = ["reviewer"]
 
 [project.scripts]
 reviewer = "reviewer:cli"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E9", "F63", "F7", "F82"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src", "reviewer.py", "tests"]
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_unused_ignores = true
+show_error_codes = true
+
+[[tool.mypy.overrides]]
+module = [
+    "src.app.models.entities",
+    "src.app.api.admin",
+    "src.app.core.config",
+    "src.app.services.github_service",
+    "reviewer",
+    "tests.unit.test_github_service",
+    "tests.unit.*",
+    "test_github_service",
+]
+ignore_errors = true
