@@ -9,7 +9,7 @@ colorama==0.4.6
 cryptography==46.0.6
 fastapi==0.135.1
 google-ai-generativelanguage==0.6.15
-google-api-core==2.25.2
+google-api-core==2.30.0
 google-api-python-client==2.193.0
 google-auth==2.49.1
 google-auth-httplib2==0.3.0
