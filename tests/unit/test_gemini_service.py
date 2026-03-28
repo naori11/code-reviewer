@@ -64,6 +64,9 @@ def test_generate_review_success() -> None:
     assert token_count == 10
     assert review == "No significant issues found."
     assert models.last_generate_contents is not None
+    assert "Review the provided Git diff and return ONLY valid JSON" in models.last_generate_contents
+    assert '"summary": "High-level review summary"' in models.last_generate_contents
+    assert '"severity": "Critical|High|Medium|Low"' in models.last_generate_contents
     assert "Review thoroughly" in models.last_generate_contents
     assert "Code Diff:" in models.last_generate_contents
     assert "+print('ok')" in models.last_generate_contents

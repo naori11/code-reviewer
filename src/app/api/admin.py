@@ -89,7 +89,13 @@ async def set_review_prompt(
     session: Session = Depends(get_session),
     settings: Settings = Depends(get_settings),
 ):
-    review_prompt = payload.review_prompt.strip()
+    if payload.reset_to_default:
+        review_prompt = settings.ai_review_prompt
+    else:
+        if payload.review_prompt is None:
+            raise HTTPException(status_code=400, detail="review_prompt is required unless reset_to_default is true")
+        review_prompt = payload.review_prompt.strip()
+
     if not review_prompt:
         raise HTTPException(status_code=400, detail="Review prompt must not be empty")
 

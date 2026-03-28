@@ -320,7 +320,7 @@ def test_webhook():
     click.echo(f"Sending test 'ping' to {config['url']}/webhook...")
     try:
         response = httpx.post(f"{config['url']}/webhook", content=body, headers=headers)
-        if response.status_code == 200:
+        if response.status_code == 202:
             click.secho(
                 f"✔ Success: Signature verified. Server responded: {response.json().get('message')}", fg="green"
             )
@@ -364,6 +364,70 @@ def set(model_id):
         response = httpx.post(f"{config['url']}/api/admin/config/active-model", headers=headers, json=payload)
         response.raise_for_status()
         click.secho(f"✔ Successfully switched to {model_id}", fg="green")
+    except Exception as e:
+        click.secho(f"Error: {str(e)}", fg="red")
+
+
+@cli.command("prompt")
+def get_prompt():
+    """Show the current review prompt and version."""
+    config = load_client_config()
+    headers = {"X-Admin-Token": config["token"]}
+
+    try:
+        response = httpx.get(f"{config['url']}/api/admin/config/review-prompt", headers=headers, timeout=10.0)
+        response.raise_for_status()
+        data = response.json()
+        click.secho("✔ Current review prompt", fg="green")
+        click.echo(f"Prompt Version: {data.get('prompt_version')}")
+        click.echo("\n--- Prompt Start ---")
+        click.echo(data.get("review_prompt", ""))
+        click.echo("--- Prompt End ---")
+    except Exception as e:
+        click.secho(f"Error: {str(e)}", fg="red")
+
+
+@cli.command("set-prompt")
+@click.option("--text", help="Review prompt text to set.")
+@click.option("--reset-default", is_flag=True, help="Reset review prompt to server-side default AI_REVIEW_PROMPT.")
+def set_prompt(text, reset_default):
+    """Set the active review prompt used by AI reviews."""
+    if text and reset_default:
+        click.secho("Error: Use either --text or --reset-default, not both.", fg="red")
+        return
+
+    config = load_client_config()
+    headers = {"X-Admin-Token": config["token"]}
+
+    if reset_default:
+        payload = {"reset_to_default": True}
+    else:
+        prompt_text = text
+
+        if prompt_text is None:
+            try:
+                response = httpx.get(f"{config['url']}/api/admin/config/review-prompt", headers=headers, timeout=10.0)
+                response.raise_for_status()
+                current_prompt = response.json().get("review_prompt", "")
+            except Exception as e:
+                click.secho(f"Error fetching current prompt: {str(e)}", fg="red")
+                return
+
+            prompt_text = click.prompt("Review prompt", default=current_prompt, show_default=False)
+
+        prompt_text = prompt_text.strip()
+        if not prompt_text:
+            click.secho("Error: Prompt must not be empty.", fg="red")
+            return
+
+        payload = {"review_prompt": prompt_text}
+
+    try:
+        response = httpx.post(f"{config['url']}/api/admin/config/review-prompt", headers=headers, json=payload, timeout=10.0)
+        response.raise_for_status()
+        data = response.json()
+        click.secho("✔ Review prompt updated", fg="green")
+        click.echo(f"Prompt Version: {data.get('prompt_version')}")
     except Exception as e:
         click.secho(f"Error: {str(e)}", fg="red")
 

@@ -31,7 +31,8 @@ class ActiveModelUpdateResponse(BaseModel):
 
 
 class ReviewPromptRequest(BaseModel):
-    review_prompt: str = Field(min_length=1, max_length=50000)
+    review_prompt: str | None = Field(default=None, max_length=50000)
+    reset_to_default: bool = False
 
 
 class ReviewPromptResponse(BaseModel):

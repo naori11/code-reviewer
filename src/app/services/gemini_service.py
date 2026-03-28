@@ -10,6 +10,21 @@ from ..core.config import Settings
 
 logger = logging.getLogger(__name__)
 
+REQUIRED_REVIEW_PROMPT_PREFIX = """Review the provided Git diff and return ONLY valid JSON with no markdown fences and no extra text.
+
+Output schema:
+{
+  \"summary\": \"High-level review summary\",
+  \"suggestions\": [
+    {
+      \"path\": \"relative/file/path.py\",
+      \"line\": 42,
+      \"message\": \"Issue + concrete fix\",
+      \"severity\": \"Critical|High|Medium|Low\"
+    }
+  ]
+}"""
+
 
 class TokenLimitExceededError(Exception):
     def __init__(self, message: str, token_count: int):
@@ -118,7 +133,11 @@ class GeminiService:
                 )
                 raise TokenLimitExceededError(message, token_count)
 
-            full_prompt = f"{prompt_instructions}\n\nCode Diff:\n{diff_content}"
+            full_prompt = (
+                f"{REQUIRED_REVIEW_PROMPT_PREFIX}\n\n"
+                f"Additional review instructions:\n{prompt_instructions}\n\n"
+                f"Code Diff:\n{diff_content}"
+            )
             async for attempt in AsyncRetrying(
                 stop=stop_after_attempt(3),
                 wait=wait_exponential(multiplier=1, min=2, max=10),
