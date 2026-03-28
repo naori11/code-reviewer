@@ -12,6 +12,7 @@ from .api.webhooks import router as webhooks_router
 from .core.config import get_settings
 from .core.database import engine, init_db
 from .crud.app_config import ensure_app_config_singleton
+from .scripts.migrate_config import migrate_prompt_observability_columns
 
 LOGGING_CONFIG = {
     "version": 1,
@@ -50,9 +51,10 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     settings = get_settings()
     init_db()
+    migrate_prompt_observability_columns(settings.ai_review_prompt)
 
     with Session(engine) as session:
-        ensure_app_config_singleton(session, settings.ai_model_name)
+        ensure_app_config_singleton(session, settings.ai_model_name, settings.ai_review_prompt)
 
     async with httpx.AsyncClient(timeout=30.0) as http_client:
         app.state.http_client = http_client

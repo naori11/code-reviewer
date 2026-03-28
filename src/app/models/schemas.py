@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ModelInfo(BaseModel):
@@ -30,6 +30,21 @@ class ActiveModelUpdateResponse(BaseModel):
     active_model: str
 
 
+class ReviewPromptRequest(BaseModel):
+    review_prompt: str = Field(min_length=1, max_length=50000)
+
+
+class ReviewPromptResponse(BaseModel):
+    review_prompt: str
+    prompt_version: int
+
+
+class ReviewPromptUpdateResponse(BaseModel):
+    status: str
+    review_prompt: str
+    prompt_version: int
+
+
 class ReviewHistoryItem(BaseModel):
     id: UUID
     repo_name: str
@@ -37,6 +52,8 @@ class ReviewHistoryItem(BaseModel):
     model_used: str
     token_count: int
     status: str
+    prompt_version: int | None
+    prompt_hash: str | None
     created_at: datetime
 
 

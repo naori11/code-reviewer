@@ -31,7 +31,6 @@ class GeminiService:
     def __init__(self, settings: Settings, client: genai.Client | None = None):
         self.settings = settings
         self.client = client or genai.Client(api_key=settings.gemini_api_key)
-        self.prompt_instructions = settings.ai_review_prompt
 
     async def count_tokens(self, model_name: str, contents: str) -> int:
         async for attempt in AsyncRetrying(
@@ -101,7 +100,12 @@ class GeminiService:
             "suggestions": normalized_suggestions,
         }
 
-    async def generate_structured_review(self, diff_content: str, model_name: str) -> tuple[dict[str, Any], int]:
+    async def generate_structured_review(
+        self,
+        diff_content: str,
+        model_name: str,
+        prompt_instructions: str,
+    ) -> tuple[dict[str, Any], int]:
         try:
             token_count = await self.count_tokens(model_name=model_name, contents=diff_content)
             logger.info("Diff token count: %s", token_count)
@@ -114,7 +118,7 @@ class GeminiService:
                 )
                 raise TokenLimitExceededError(message, token_count)
 
-            full_prompt = f"{self.prompt_instructions}\n\nCode Diff:\n{diff_content}"
+            full_prompt = f"{prompt_instructions}\n\nCode Diff:\n{diff_content}"
             async for attempt in AsyncRetrying(
                 stop=stop_after_attempt(3),
                 wait=wait_exponential(multiplier=1, min=2, max=10),
@@ -137,8 +141,12 @@ class GeminiService:
             logger.exception("Async Gemini API error: %s", exc)
             raise GeminiServiceError(f"Error calling Gemini API: {exc}") from exc
 
-    async def generate_review(self, diff_content: str, model_name: str) -> tuple[str, int]:
-        structured_review, token_count = await self.generate_structured_review(diff_content, model_name)
+    async def generate_review(self, diff_content: str, model_name: str, prompt_instructions: str) -> tuple[str, int]:
+        structured_review, token_count = await self.generate_structured_review(
+            diff_content,
+            model_name,
+            prompt_instructions,
+        )
 
         lines: list[str] = [structured_review.get("summary", "No significant issues found.")]
         suggestions = structured_review.get("suggestions", [])

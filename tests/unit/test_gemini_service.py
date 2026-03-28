@@ -59,11 +59,12 @@ def test_generate_review_success() -> None:
     )
     service = GeminiService(settings=_settings(max_tokens=100), client=_FakeClient(models))
 
-    review, token_count = asyncio.run(service.generate_review(diff_content="+print('ok')", model_name="models/test"))
+    review, token_count = asyncio.run(service.generate_review(diff_content="+print('ok')", model_name="models/test", prompt_instructions="Review thoroughly"))
 
     assert token_count == 10
     assert review == "No significant issues found."
     assert models.last_generate_contents is not None
+    assert "Review thoroughly" in models.last_generate_contents
     assert "Code Diff:" in models.last_generate_contents
     assert "+print('ok')" in models.last_generate_contents
 
@@ -73,7 +74,13 @@ def test_generate_review_raises_on_token_limit() -> None:
     service = GeminiService(settings=_settings(max_tokens=100), client=_FakeClient(models))
 
     with pytest.raises(TokenLimitExceededError) as exc_info:
-        asyncio.run(service.generate_review(diff_content="huge diff", model_name="models/test"))
+        asyncio.run(
+            service.generate_review(
+                diff_content="huge diff",
+                model_name="models/test",
+                prompt_instructions="Review thoroughly",
+            )
+        )
 
     assert exc_info.value.token_count == 500
     assert "too large for automated review" in str(exc_info.value)
@@ -89,6 +96,12 @@ def test_generate_review_wraps_unexpected_errors(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(service, "count_tokens", _boom)
 
     with pytest.raises(GeminiServiceError) as exc_info:
-        asyncio.run(service.generate_review(diff_content="diff", model_name="models/test"))
+        asyncio.run(
+            service.generate_review(
+                diff_content="diff",
+                model_name="models/test",
+                prompt_instructions="Review thoroughly",
+            )
+        )
 
     assert "Error calling Gemini API" in str(exc_info.value)
