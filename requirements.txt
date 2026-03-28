@@ -6,7 +6,7 @@ cffi==2.0.0
 charset-normalizer==3.4.6
 click==8.3.1
 colorama==0.4.6
-cryptography==46.0.5
+cryptography==46.0.6
 fastapi==0.135.1
 google-ai-generativelanguage==0.6.15
 google-api-core==2.25.2
