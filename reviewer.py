@@ -35,6 +35,77 @@ def load_client_config():
         return config
 
 
+def _admin_get(path: str, timeout: float = 10.0):
+    config = load_client_config()
+    headers = {"X-Admin-Token": config["token"]}
+    response = httpx.get(f"{config['url']}{path}", headers=headers, timeout=timeout)
+    response.raise_for_status()
+    return response.json()
+
+
+def _admin_post(path: str, payload: dict, timeout: float = 10.0):
+    config = load_client_config()
+    headers = {"X-Admin-Token": config["token"]}
+    response = httpx.post(f"{config['url']}{path}", headers=headers, json=payload, timeout=timeout)
+    response.raise_for_status()
+    return response.json()
+
+
+def _print_models_table(data: dict):
+    click.echo(f"\n{'DISPLAY NAME':<35} | {'MODEL ID':<45}")
+    click.echo("-" * 85)
+
+    for model in data.get("models", []):
+        click.echo(f"{model['display_name']:<35} | {model['model_id']:<45}")
+
+    click.echo(f"\nTotal: {data.get('count', 0)} models found.")
+
+
+def _print_prompt(data: dict):
+    click.secho("✔ Current review prompt", fg="green")
+    click.echo(f"Prompt Version: {data.get('prompt_version')}")
+    click.echo("\n--- Prompt Start ---")
+    click.echo(data.get("review_prompt", ""))
+    click.echo("--- Prompt End ---")
+
+
+def _print_active_model(data: dict):
+    click.secho("✔ Active model", fg="green")
+    click.echo(f"Active Model  : {data.get('active_model')}")
+
+
+def _print_history(data: dict):
+    click.echo(
+        f"\n{'REPO':<30} | {'PR':<8} | {'MODEL':<28} | {'TOKENS':<8} | {'STATUS':<10} | {'PROMPT V':<8} | {'HASH':<12}"
+    )
+    click.echo("-" * 130)
+    for row in data.get("history", []):
+        click.echo(
+            f"{str(row.get('repo_name', '')):<30} | "
+            f"{str(row.get('pr_number', '')):<8} | "
+            f"{str(row.get('model_used', '')):<28} | "
+            f"{str(row.get('token_count', '')):<8} | "
+            f"{str(row.get('status', '')):<10} | "
+            f"{str(row.get('prompt_version', '')):<8} | "
+            f"{str(row.get('prompt_hash', '')):<12}"
+        )
+    click.echo(f"\nTotal: {data.get('count', 0)} records found.")
+
+
+def _print_prompt_history(data: dict):
+    click.echo(f"\n{'PROMPT V':<10} | {'HASH':<12} | {'REVIEWS':<8} | {'FIRST USED':<26} | {'LAST USED':<26}")
+    click.echo("-" * 100)
+    for row in data.get("history", []):
+        click.echo(
+            f"{str(row.get('prompt_version', '')):<10} | "
+            f"{str(row.get('prompt_hash', '')):<12} | "
+            f"{str(row.get('review_count', '')):<8} | "
+            f"{str(row.get('first_used_at', '')):<26} | "
+            f"{str(row.get('last_used_at', '')):<26}"
+        )
+    click.echo(f"\nTotal: {data.get('count', 0)} prompt versions found.")
+
+
 def restart_server():
     """Executes docker-compose restart to apply changes."""
     click.echo("🔄 Restarting server container via docker-compose...")
@@ -70,6 +141,12 @@ Getting Started:
 """
 )
 def cli():
+    pass
+
+
+@cli.group("admin-mode")
+def admin_mode():
+    """Call admin API endpoints."""
     pass
 
 
@@ -320,7 +397,7 @@ def test_webhook():
     click.echo(f"Sending test 'ping' to {config['url']}/webhook...")
     try:
         response = httpx.post(f"{config['url']}/webhook", content=body, headers=headers)
-        if response.status_code == 200:
+        if response.status_code == 202:
             click.secho(
                 f"✔ Success: Signature verified. Server responded: {response.json().get('message')}", fg="green"
             )
@@ -333,21 +410,9 @@ def test_webhook():
 @cli.command()
 def list():
     """List Gemini models suitable for code review."""
-    config = load_client_config()
-    headers = {"X-Admin-Token": config["token"]}
-
     try:
-        response = httpx.get(f"{config['url']}/api/admin/models", headers=headers, timeout=10.0)
-        response.raise_for_status()
-        data = response.json()
-
-        click.echo(f"\n{'DISPLAY NAME':<35} | {'MODEL ID':<45}")
-        click.echo("-" * 85)
-
-        for m in data.get("models", []):
-            click.echo(f"{m['display_name']:<35} | {m['model_id']:<45}")
-
-        click.echo(f"\nTotal: {data.get('count', 0)} models found.")
+        data = _admin_get("/api/admin/models")
+        _print_models_table(data)
     except Exception as e:
         click.secho(f"Error: {str(e)}", fg="red")
 
@@ -356,14 +421,60 @@ def list():
 @click.argument("model_id")
 def set(model_id):
     """Switch the active Gemini model for reviews."""
-    config = load_client_config()
-    headers = {"X-Admin-Token": config["token"]}
     payload = {"model_name": model_id}
 
     try:
-        response = httpx.post(f"{config['url']}/api/admin/config/active-model", headers=headers, json=payload)
-        response.raise_for_status()
+        _admin_post("/api/admin/config/active-model", payload)
         click.secho(f"✔ Successfully switched to {model_id}", fg="green")
+    except Exception as e:
+        click.secho(f"Error: {str(e)}", fg="red")
+
+
+@cli.command("prompt")
+def get_prompt():
+    """Show the current review prompt and version."""
+    try:
+        data = _admin_get("/api/admin/config/review-prompt")
+        _print_prompt(data)
+    except Exception as e:
+        click.secho(f"Error: {str(e)}", fg="red")
+
+
+@cli.command("set-prompt")
+@click.option("--text", help="Review prompt text to set.")
+@click.option("--reset-default", is_flag=True, help="Reset review prompt to server-side default AI_REVIEW_PROMPT.")
+def set_prompt(text, reset_default):
+    """Set the active review prompt used by AI reviews."""
+    if text and reset_default:
+        click.secho("Error: Use either --text or --reset-default, not both.", fg="red")
+        return
+
+    if reset_default:
+        payload = {"reset_to_default": True}
+    else:
+        prompt_text = text
+
+        if prompt_text is None:
+            try:
+                data = _admin_get("/api/admin/config/review-prompt")
+                current_prompt = data.get("review_prompt", "")
+            except Exception as e:
+                click.secho(f"Error fetching current prompt: {str(e)}", fg="red")
+                return
+
+            prompt_text = click.prompt("Review prompt", default=current_prompt, show_default=False)
+
+        prompt_text = prompt_text.strip()
+        if not prompt_text:
+            click.secho("Error: Prompt must not be empty.", fg="red")
+            return
+
+        payload = {"review_prompt": prompt_text}
+
+    try:
+        data = _admin_post("/api/admin/config/review-prompt", payload)
+        click.secho("✔ Review prompt updated", fg="green")
+        click.echo(f"Prompt Version: {data.get('prompt_version')}")
     except Exception as e:
         click.secho(f"Error: {str(e)}", fg="red")
 
@@ -381,7 +492,7 @@ def status():
         if response.status_code == 200:
             data = response.json()
             click.secho(f"✔ Server Status: Online", fg="green")
-            click.echo(f"Active Model  : {data.get('active_model')}")
+            _print_active_model(data)
         elif response.status_code == 403:
             click.secho(f"✘ Server Status: Unauthorized", fg="red")
             click.echo("Reason: The Admin Token configured in this CLI does not match the server's WEBHOOK_SECRET.")
@@ -395,6 +506,103 @@ def status():
     except Exception as e:
         click.secho(f"✘ Server Status: Offline/Error", fg="red")
         click.echo(f"Error detail: {str(e)}")
+
+
+@admin_mode.command("models")
+def admin_models():
+    """List Gemini models from admin API."""
+    try:
+        data = _admin_get("/api/admin/models")
+        _print_models_table(data)
+    except Exception as e:
+        click.secho(f"Error: {str(e)}", fg="red")
+
+
+@admin_mode.command("active-model")
+def admin_active_model():
+    """Show active model from admin API."""
+    try:
+        data = _admin_get("/api/admin/config/active-model")
+        _print_active_model(data)
+    except Exception as e:
+        click.secho(f"Error: {str(e)}", fg="red")
+
+
+@admin_mode.command("set-model")
+@click.argument("model_id")
+def admin_set_model(model_id):
+    """Set active model via admin API."""
+    try:
+        _admin_post("/api/admin/config/active-model", {"model_name": model_id})
+        click.secho(f"✔ Successfully switched to {model_id}", fg="green")
+    except Exception as e:
+        click.secho(f"Error: {str(e)}", fg="red")
+
+
+@admin_mode.command("prompt")
+def admin_prompt():
+    """Show current review prompt from admin API."""
+    try:
+        data = _admin_get("/api/admin/config/review-prompt")
+        _print_prompt(data)
+    except Exception as e:
+        click.secho(f"Error: {str(e)}", fg="red")
+
+
+@admin_mode.command("set-prompt")
+@click.option("--text", help="Review prompt text to set.")
+@click.option("--reset-default", is_flag=True, help="Reset review prompt to server-side default AI_REVIEW_PROMPT.")
+def admin_set_prompt(text, reset_default):
+    """Set review prompt via admin API."""
+    if text and reset_default:
+        click.secho("Error: Use either --text or --reset-default, not both.", fg="red")
+        return
+
+    if reset_default:
+        payload = {"reset_to_default": True}
+    else:
+        prompt_text = text
+        if prompt_text is None:
+            try:
+                data = _admin_get("/api/admin/config/review-prompt")
+                current_prompt = data.get("review_prompt", "")
+            except Exception as e:
+                click.secho(f"Error fetching current prompt: {str(e)}", fg="red")
+                return
+            prompt_text = click.prompt("Review prompt", default=current_prompt, show_default=False)
+
+        prompt_text = prompt_text.strip()
+        if not prompt_text:
+            click.secho("Error: Prompt must not be empty.", fg="red")
+            return
+        payload = {"review_prompt": prompt_text}
+
+    try:
+        data = _admin_post("/api/admin/config/review-prompt", payload)
+        click.secho("✔ Review prompt updated", fg="green")
+        click.echo(f"Prompt Version: {data.get('prompt_version')}")
+    except Exception as e:
+        click.secho(f"Error: {str(e)}", fg="red")
+
+
+@admin_mode.command("history")
+def admin_history():
+    """Show review history from admin API."""
+    try:
+        data = _admin_get("/api/admin/history")
+        _print_history(data)
+    except Exception as e:
+        click.secho(f"Error: {str(e)}", fg="red")
+
+
+@admin_mode.command("prompt-history")
+def admin_prompt_history():
+    """Show prompt usage history from admin API."""
+    try:
+        data = _admin_get("/api/admin/history/prompts")
+        _print_prompt_history(data)
+    except Exception as e:
+        click.secho(f"Error: {str(e)}", fg="red")
 
 
 if __name__ == "__main__":

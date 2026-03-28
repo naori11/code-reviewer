@@ -115,3 +115,48 @@ def test_health_pat_success(monkeypatch) -> None:
     assert result.exit_code == 0
     assert "Gemini API: Connected and Authorized" in result.output
     assert "GitHub PAT: Authenticated as ci-bot" in result.output
+
+
+def test_admin_mode_models(monkeypatch) -> None:
+    monkeypatch.setattr(
+        reviewer,
+        "_admin_get",
+        lambda path, timeout=10.0: {
+            "count": 1,
+            "models": [{"display_name": "Gemini Flash", "model_id": "gemini-2.5-flash"}],
+        },
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(reviewer.cli, ["admin-mode", "models"])
+
+    assert result.exit_code == 0
+    assert "DISPLAY NAME" in result.output
+    assert "Gemini Flash" in result.output
+
+
+def test_admin_mode_prompt_history(monkeypatch) -> None:
+    monkeypatch.setattr(
+        reviewer,
+        "_admin_get",
+        lambda path, timeout=10.0: {
+            "count": 1,
+            "history": [
+                {
+                    "prompt_version": 3,
+                    "prompt_hash": "abc123def456",
+                    "review_count": 7,
+                    "first_used_at": "2026-03-20T00:00:00Z",
+                    "last_used_at": "2026-03-29T00:00:00Z",
+                }
+            ],
+        },
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(reviewer.cli, ["admin-mode", "prompt-history"])
+
+    assert result.exit_code == 0
+    assert "PROMPT V" in result.output
+    assert "abc123def456" in result.output
+    assert "Total: 1 prompt versions found." in result.output

@@ -1,18 +1,29 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy import func
 from sqlmodel import Session, desc, select
 
 from ..core.config import Settings, get_settings
 from ..core.database import get_session
 from ..core.security import verify_admin_token
-from ..crud.app_config import get_app_config_singleton, set_active_model_singleton
+from ..crud.app_config import (
+    get_app_config_singleton,
+    resolve_effective_review_prompt,
+    set_active_model_singleton,
+    set_review_prompt_singleton,
+)
 from ..models.entities import ReviewHistory
 from ..models.schemas import (
     ActiveModelRequest,
     ActiveModelResponse,
     ActiveModelUpdateResponse,
     ModelsResponse,
+    PromptHistoryItem,
+    PromptHistoryResponse,
     ReviewHistoryItem,
     ReviewHistoryResponse,
+    ReviewPromptRequest,
+    ReviewPromptResponse,
+    ReviewPromptUpdateResponse,
 )
 from ..services.gemini_service import GeminiService
 
@@ -52,14 +63,51 @@ async def set_active_model(
     _: str = Depends(verify_admin_token),
     session: Session = Depends(get_session),
     gemini_service: GeminiService = Depends(get_gemini_service),
+    settings: Settings = Depends(get_settings),
 ):
     try:
         await gemini_service.validate_model(payload.model_name)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Invalid or inaccessible model: {payload.model_name}") from exc
 
-    set_active_model_singleton(session, payload.model_name)
+    set_active_model_singleton(session, payload.model_name, settings.ai_review_prompt)
     return ActiveModelUpdateResponse(status="success", active_model=payload.model_name)
+
+
+@router.get("/config/review-prompt", response_model=ReviewPromptResponse)
+async def get_review_prompt(
+    _: str = Depends(verify_admin_token),
+    session: Session = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+):
+    app_config = get_app_config_singleton(session)
+    review_prompt, prompt_version = resolve_effective_review_prompt(app_config, settings.ai_review_prompt)
+    return ReviewPromptResponse(review_prompt=review_prompt, prompt_version=prompt_version)
+
+
+@router.post("/config/review-prompt", response_model=ReviewPromptUpdateResponse)
+async def set_review_prompt(
+    payload: ReviewPromptRequest,
+    _: str = Depends(verify_admin_token),
+    session: Session = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+):
+    if payload.reset_to_default:
+        review_prompt = settings.ai_review_prompt
+    else:
+        if payload.review_prompt is None:
+            raise HTTPException(status_code=400, detail="review_prompt is required unless reset_to_default is true")
+        review_prompt = payload.review_prompt.strip()
+
+    if not review_prompt:
+        raise HTTPException(status_code=400, detail="Review prompt must not be empty")
+
+    app_config = set_review_prompt_singleton(session, review_prompt, settings.ai_model_name)
+    return ReviewPromptUpdateResponse(
+        status="success",
+        review_prompt=app_config.ai_review_prompt,
+        prompt_version=app_config.prompt_version,
+    )
 
 
 @router.get("/history", response_model=ReviewHistoryResponse)
@@ -76,8 +124,40 @@ async def review_history(
             model_used=row.model_used,
             token_count=row.token_count,
             status=row.status,
+            prompt_version=row.prompt_version,
+            prompt_hash=row.prompt_hash,
             created_at=row.created_at,
         )
         for row in rows
     ]
     return ReviewHistoryResponse(status="success", count=len(history), history=history)
+
+
+@router.get("/history/prompts", response_model=PromptHistoryResponse)
+async def prompt_history(
+    _: str = Depends(verify_admin_token),
+    session: Session = Depends(get_session),
+):
+    rows = session.exec(
+        select(
+            ReviewHistory.prompt_version,
+            ReviewHistory.prompt_hash,
+            func.count(ReviewHistory.id),
+            func.min(ReviewHistory.created_at),
+            func.max(ReviewHistory.created_at),
+        )
+        .group_by(ReviewHistory.prompt_version, ReviewHistory.prompt_hash)
+        .order_by(func.max(ReviewHistory.created_at).desc())
+    ).all()
+
+    history = [
+        PromptHistoryItem(
+            prompt_version=row[0],
+            prompt_hash=row[1],
+            review_count=row[2],
+            first_used_at=row[3],
+            last_used_at=row[4],
+        )
+        for row in rows
+    ]
+    return PromptHistoryResponse(status="success", count=len(history), history=history)

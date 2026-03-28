@@ -1,3 +1,4 @@
+import hashlib
 import json
 import logging
 import re
@@ -9,7 +10,7 @@ from sqlmodel import Session
 from ..core.config import Settings, get_settings
 from ..core.database import engine, get_session
 from ..core.security import verify_webhook_signature
-from ..crud.app_config import get_app_config_singleton
+from ..crud.app_config import get_app_config_singleton, resolve_effective_review_prompt
 from ..models.entities import ReviewHistory
 from ..services.gemini_service import (
     GeminiService,
@@ -151,6 +152,8 @@ async def _process_pull_request_review(
     with Session(engine) as session:
         app_config = get_app_config_singleton(session)
         active_model = app_config.active_model if app_config else settings.ai_model_name
+        effective_prompt, prompt_version = resolve_effective_review_prompt(app_config, settings.ai_review_prompt)
+        prompt_hash = hashlib.sha256(effective_prompt.encode("utf-8")).hexdigest()[:12]
 
         history_status = "Success"
         review_content = ""
@@ -158,10 +161,22 @@ async def _process_pull_request_review(
         summary_for_review = ""
         inline_comments: list[dict] = []
 
+        logger.info(
+            "Starting structured review generation",
+            extra={
+                "repo": repo_full_name,
+                "pr_number": pr_number,
+                "model": active_model,
+                "prompt_version": prompt_version,
+                "prompt_hash": prompt_hash,
+            },
+        )
+
         try:
             structured_review, review_token_count = await gemini_service.generate_structured_review(
                 diff_content,
                 active_model,
+                effective_prompt,
             )
 
             summary_for_review = structured_review.get("summary", "No significant issues found.")
@@ -196,12 +211,28 @@ async def _process_pull_request_review(
             review_content = f"An unexpected error occurred during AI review: {exc}"
             summary_for_review = _build_failure_summary(review_content)
 
+        logger.info(
+            "Structured review generation completed",
+            extra={
+                "repo": repo_full_name,
+                "pr_number": pr_number,
+                "model": active_model,
+                "prompt_version": prompt_version,
+                "prompt_hash": prompt_hash,
+                "status": history_status,
+                "token_count": review_token_count,
+                "inline_comments": len(inline_comments),
+            },
+        )
+
         history_row = ReviewHistory(
             repo_name=repo_full_name,
             pr_number=pr_number,
             model_used=active_model,
             token_count=review_token_count,
             status=history_status,
+            prompt_version=prompt_version,
+            prompt_hash=prompt_hash,
         )
         session.add(history_row)
         session.commit()

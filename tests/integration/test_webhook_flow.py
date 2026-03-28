@@ -38,7 +38,12 @@ class _FakeGithubService:
 
 
 class _FakeGeminiService:
-    async def generate_structured_review(self, diff_content: str, model_name: str) -> tuple[dict, int]:
+    async def generate_structured_review(
+        self,
+        diff_content: str,
+        model_name: str,
+        prompt_instructions: str,
+    ) -> tuple[dict, int]:
         return {
             "summary": "Mock review markdown",
             "suggestions": [{"path": "main.py", "line": 1, "message": "Use structured logging", "severity": "Low"}],
@@ -92,6 +97,9 @@ def test_webhook_full_flow_records_history_and_posts_comment(
         assert len(rows) == 1
         assert rows[0].status == "Success"
         assert rows[0].token_count == 123
+        assert rows[0].prompt_version == 0
+        assert rows[0].prompt_hash is not None
+        assert len(rows[0].prompt_hash) == 12
 
 
 def test_webhook_rejects_invalid_signature(mock_settings, client):

@@ -14,6 +14,8 @@ def utc_now() -> datetime:
 class AppConfig(SQLModel, table=True):
     id: Optional[int] = Field(default=1, primary_key=True)
     active_model: str
+    ai_review_prompt: str
+    prompt_version: int = 1
     updated_at: datetime = Field(default_factory=utc_now)
 
 
@@ -24,4 +26,6 @@ class ReviewHistory(SQLModel, table=True):
     model_used: str
     token_count: int = 0
     status: str
+    prompt_version: int | None = None
+    prompt_hash: str | None = None
     created_at: datetime = Field(default_factory=utc_now, index=True)
