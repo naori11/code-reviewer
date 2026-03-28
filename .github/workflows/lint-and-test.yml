@@ -32,4 +32,7 @@ jobs:
         run: mypy src reviewer.py tests
 
       - name: Pytest
+        env:
+          WEBHOOK_SECRET: ci-test-webhook-secret
+          GEMINI_API_KEY: ci-test-gemini-key
         run: python -m pytest tests -q

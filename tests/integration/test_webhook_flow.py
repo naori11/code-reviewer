@@ -4,7 +4,6 @@ import json
 
 from sqlmodel import Session, select
 
-from src.app.api import webhooks
 from src.app.models.entities import ReviewHistory
 
 
@@ -60,6 +59,8 @@ def test_webhook_full_flow_records_history_and_posts_comment(
     app,
     client,
 ):
+    from src.app.api import webhooks
+
     github_service = _FakeGithubService()
 
     app.dependency_overrides[webhooks.get_github_service] = lambda: github_service
@@ -94,6 +95,8 @@ def test_webhook_full_flow_records_history_and_posts_comment(
 
 
 def test_webhook_rejects_invalid_signature(mock_settings, client):
+    from src.app.api import webhooks
+
     payload = {
         "action": "opened",
         "pull_request": {"number": 42},

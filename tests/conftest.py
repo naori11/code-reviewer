@@ -6,7 +6,6 @@ from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
-from src.app.api.webhooks import router as webhooks_router
 from src.app.core.config import get_settings
 from src.app.models import entities  # noqa: F401
 
@@ -50,11 +49,11 @@ def db_session(db_engine) -> Generator[Session, None, None]:
 
 
 @pytest.fixture
-def app(db_engine) -> Generator[FastAPI, None, None]:
+def app(db_engine, mock_settings: None) -> Generator[FastAPI, None, None]:
     from src.app.api import webhooks
 
     test_app = FastAPI()
-    test_app.include_router(webhooks_router)
+    test_app.include_router(webhooks.router)
     test_app.state.http_client = object()
     test_app.state.gemini_client = object()
 
