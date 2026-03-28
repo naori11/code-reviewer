@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy import func
 from sqlmodel import Session, desc, select
 
 from ..core.config import Settings, get_settings
@@ -16,6 +17,8 @@ from ..models.schemas import (
     ActiveModelResponse,
     ActiveModelUpdateResponse,
     ModelsResponse,
+    PromptHistoryItem,
+    PromptHistoryResponse,
     ReviewHistoryItem,
     ReviewHistoryResponse,
     ReviewPromptRequest,
@@ -128,3 +131,33 @@ async def review_history(
         for row in rows
     ]
     return ReviewHistoryResponse(status="success", count=len(history), history=history)
+
+
+@router.get("/history/prompts", response_model=PromptHistoryResponse)
+async def prompt_history(
+    _: str = Depends(verify_admin_token),
+    session: Session = Depends(get_session),
+):
+    rows = session.exec(
+        select(
+            ReviewHistory.prompt_version,
+            ReviewHistory.prompt_hash,
+            func.count(ReviewHistory.id),
+            func.min(ReviewHistory.created_at),
+            func.max(ReviewHistory.created_at),
+        )
+        .group_by(ReviewHistory.prompt_version, ReviewHistory.prompt_hash)
+        .order_by(func.max(ReviewHistory.created_at).desc())
+    ).all()
+
+    history = [
+        PromptHistoryItem(
+            prompt_version=row[0],
+            prompt_hash=row[1],
+            review_count=row[2],
+            first_used_at=row[3],
+            last_used_at=row[4],
+        )
+        for row in rows
+    ]
+    return PromptHistoryResponse(status="success", count=len(history), history=history)

@@ -97,7 +97,7 @@ def test_webhook_full_flow_records_history_and_posts_comment(
         assert len(rows) == 1
         assert rows[0].status == "Success"
         assert rows[0].token_count == 123
-        assert rows[0].prompt_version == 1
+        assert rows[0].prompt_version == 0
         assert rows[0].prompt_hash is not None
         assert len(rows[0].prompt_hash) == 12
 

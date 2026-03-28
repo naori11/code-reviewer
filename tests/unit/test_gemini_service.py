@@ -59,7 +59,11 @@ def test_generate_review_success() -> None:
     )
     service = GeminiService(settings=_settings(max_tokens=100), client=_FakeClient(models))
 
-    review, token_count = asyncio.run(service.generate_review(diff_content="+print('ok')", model_name="models/test", prompt_instructions="Review thoroughly"))
+    review, token_count = asyncio.run(
+        service.generate_review(
+            diff_content="+print('ok')", model_name="models/test", prompt_instructions="Review thoroughly"
+        )
+    )
 
     assert token_count == 10
     assert review == "No significant issues found."

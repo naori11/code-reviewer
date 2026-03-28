@@ -62,3 +62,17 @@ class ReviewHistoryResponse(BaseModel):
     status: str
     count: int
     history: list[ReviewHistoryItem]
+
+
+class PromptHistoryItem(BaseModel):
+    prompt_version: int | None
+    prompt_hash: str | None
+    review_count: int
+    first_used_at: datetime
+    last_used_at: datetime
+
+
+class PromptHistoryResponse(BaseModel):
+    status: str
+    count: int
+    history: list[PromptHistoryItem]

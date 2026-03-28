@@ -64,9 +64,7 @@ def migrate_prompt_observability_columns(default_prompt: str) -> None:
             ),
             {"default_prompt": default_prompt},
         )
-        conn.execute(
-            text("UPDATE appconfig SET prompt_version = 1 WHERE prompt_version IS NULL OR prompt_version < 1")
-        )
+        conn.execute(text("UPDATE appconfig SET prompt_version = 1 WHERE prompt_version IS NULL OR prompt_version < 1"))
 
 
 if __name__ == "__main__":
